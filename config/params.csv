@@ -1,0 +1,8 @@
+key,value
+handling_hours,0.5
+tier_boundaries_hours,6;24
+crate_kg,10
+tier_weights,3;2;1
+shift_hours,8
+low_load_pct,20
+rate_inr_per_kg_km,0.5

@@ -1,0 +1,51 @@
+ngo_id,name,type,node_id,demand_veg_kg,demand_non_veg_kg,demand_vegan_kg
+N1,Annapurna Food Bank,food_bank,J89,39,0,22
+N2,Sahyog Night Shelter,shelter,J39,30,0,16
+N3,Aashray Night Shelter,shelter,J85,21,22,12
+N4,Aashray Orphanage,orphanage,J1,16,0,9
+N5,Jyoti Orphanage,orphanage,J41,0,0,20
+N6,Prerana Food Bank,food_bank,J45,24,26,13
+N7,Sneha Community Kitchen,community_kitchen,J3,16,16,9
+N8,Asha Community Kitchen,community_kitchen,J68,19,20,11
+N9,Hope Orphanage,orphanage,J12,21,0,12
+N10,Nanhe Kadam Community Kitchen,community_kitchen,J77,38,41,21
+N11,Sankalp Food Bank,food_bank,J30,38,0,21
+N12,Kiran Food Bank,food_bank,J58,19,0,10
+N13,Mamta Old Age Home,old_age_home,J48,18,19,10
+N14,Ekta Orphanage,orphanage,J49,29,30,16
+N15,Nanhe Kadam Food Bank,food_bank,J26,40,0,22
+N16,Sahyog Community Kitchen,community_kitchen,J53,33,0,18
+N17,Samarth Old Age Home,old_age_home,J59,28,0,16
+N18,Samarth Night Shelter,shelter,J11,38,0,21
+N19,Seva Community Kitchen,community_kitchen,J7,37,0,20
+N20,Prerana Orphanage,orphanage,J63,38,40,21
+N21,Aadhar Night Shelter,shelter,J57,18,0,10
+N22,Udaan Night Shelter,shelter,J75,36,38,20
+N23,Aashray Old Age Home,old_age_home,J6,38,40,21
+N24,Annapurna Old Age Home,old_age_home,J46,19,20,10
+N25,Ekta Night Shelter,shelter,J64,23,25,13
+N26,Ujjwal Orphanage,orphanage,J56,15,0,8
+N27,Sankalp Night Shelter,shelter,J22,24,26,13
+N28,Navjeevan Food Bank,food_bank,J17,20,21,11
+N29,Umeed Community Kitchen,community_kitchen,J86,34,36,19
+N30,Annapurna Community Kitchen,community_kitchen,J50,35,37,19
+N31,Disha Community Kitchen,community_kitchen,J93,26,0,14
+N32,Kiran Old Age Home,old_age_home,J100,24,0,13
+N33,Asha Night Shelter,shelter,J29,0,0,16
+N34,Disha Old Age Home,old_age_home,J80,33,35,18
+N35,Shanti Old Age Home,old_age_home,J38,26,0,14
+N36,Sahyog Food Bank,food_bank,J36,26,0,14
+N37,Udaan Food Bank,food_bank,J87,30,32,16
+N38,Navjeevan Community Kitchen,community_kitchen,J43,18,0,10
+N39,Ujjwal Community Kitchen,community_kitchen,J32,26,28,14
+N40,Karuna Night Shelter,shelter,J52,0,0,15
+N41,Disha Night Shelter,shelter,J94,24,26,13
+N42,Ekta Food Bank,food_bank,J74,15,15,8
+N43,Karuna Old Age Home,old_age_home,J84,21,22,11
+N44,Aashray Community Kitchen,community_kitchen,J67,39,41,21
+N45,Samarth Community Kitchen,community_kitchen,J81,30,31,16
+N46,Ujjwal Night Shelter,shelter,J2,27,29,15
+N47,Sparsh Community Kitchen,community_kitchen,J34,0,0,18
+N48,Seva Old Age Home,old_age_home,J16,0,0,15
+N49,Shanti Food Bank,food_bank,J61,28,0,16
+N50,Umeed Night Shelter,shelter,J72,31,0,17

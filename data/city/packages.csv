@@ -1,0 +1,49 @@
+package_id,donor_id,item,category,meals,weight_kg,expiry_hours
+P1,D1,Vegetable packs,VEGAN,43,17,41.5
+P2,D1,Curd rice packs,VEG,53,20,13.0
+P3,D1,Bread and buns,VEGAN,35,14,28.75
+P4,D2,Khichdi,VEG,42,17,1.75
+P5,D2,Lemon rice,VEGAN,27,10,6.0
+P6,D2,Chapati and sabzi,VEG,65,25,2.0
+P7,D2,Sambar rice,VEGAN,58,21,3.0
+P8,D3,Paneer curry with rice,VEG,22,9,3.5
+P9,D3,Veg biryani,VEG,36,13,4.25
+P10,D3,Dal rice,VEG,16,6,3.75
+P11,D3,Vegetable pulao,VEG,16,7,5.25
+P12,D4,Khichdi,VEG,55,23,5.0
+P13,D4,Sambar rice,VEGAN,58,22,3.25
+P14,D4,Chapati and sabzi,VEG,28,12,4.5
+P15,D5,Veg biryani,VEG,30,13,5.25
+P16,D5,Dal rice,VEG,31,13,4.5
+P17,D5,Fish curry meals,NON_VEG,31,14,4.0
+P18,D6,Chapati and sabzi,VEG,37,16,1.0
+P19,D6,Khichdi,VEG,41,17,4.75
+P20,D6,Sambar rice,VEGAN,51,23,5.25
+P21,D6,Lemon rice,VEGAN,55,21,5.5
+P22,D7,Mixed veg salad,VEGAN,71,26,6.0
+P23,D7,Chicken biryani,NON_VEG,75,34,3.5
+P24,D7,Mutton biryani,NON_VEG,80,35,3.25
+P25,D7,Veg fried rice,VEG,73,29,7.75
+P26,D7,Paneer pulao,VEG,50,20,7.5
+P27,D8,Chole rice,VEGAN,20,9,2.25
+P28,D8,Veg biryani,VEG,18,7,3.75
+P29,D8,Fish curry meals,NON_VEG,18,7,3.5
+P30,D8,Vegetable pulao,VEG,32,14,4.25
+P31,D9,Chicken sandwiches,NON_VEG,46,17,28.0
+P32,D9,Vegetable packs,VEGAN,51,20,17.0
+P33,D9,Milk and paneer,VEG,21,9,41.25
+P34,D9,Curd rice packs,VEG,17,7,22.5
+P35,D9,Bread and buns,VEGAN,36,16,16.0
+P36,D10,Veg fried rice,VEG,32,14,4.0
+P37,D10,Paneer pulao,VEG,67,24,3.75
+P38,D10,Mutton biryani,NON_VEG,51,22,9.0
+P39,D10,Gulab jamun,VEG,71,31,8.75
+P40,D10,Mixed veg salad,VEGAN,56,23,10.0
+P41,D11,Mutton biryani,NON_VEG,79,33,5.0
+P42,D11,Veg fried rice,VEG,53,24,5.5
+P43,D11,Chicken biryani,NON_VEG,48,20,6.25
+P44,D11,Paneer pulao,VEG,33,12,3.0
+P45,D12,Bread and buns,VEGAN,14,6,44.0
+P46,D12,Milk and paneer,VEG,44,18,11.5
+P47,D12,Curd rice packs,VEG,55,20,34.5
+P48,D12,Fruit packs,VEGAN,33,12,12.25

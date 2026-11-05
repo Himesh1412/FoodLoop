@@ -1,0 +1,15 @@
+package_id,donor_id,item,category,meals,weight_kg,expiry_hours
+P1,D1,Veg biryani,VEG,30,12,4
+P2,D1,Chicken curry with rice,NON_VEG,20,9,3
+P3,D1,Dal rice,VEG,25,10,5
+P4,D2,Bread and buns,VEGAN,60,15,48
+P5,D2,Fruit packs,VEGAN,40,16,36
+P6,D2,Curd rice packs,VEG,30,12,8
+P7,D2,Chicken sandwiches,NON_VEG,20,6,6
+P8,D3,Chapati and sabzi,VEG,50,20,6
+P9,D3,Egg curry with rice,NON_VEG,35,15,5
+P10,D3,Khichdi,VEG,40,18,0.75
+P11,D4,Paneer pulao,VEG,70,28,5
+P12,D4,Mutton biryani,NON_VEG,45,20,4
+P13,D4,Veg fried rice,VEG,40,15,10
+P14,D4,Mixed veg salad,VEGAN,30,10,3

@@ -1,0 +1,13 @@
+node_id,x_km,y_km,label
+J1,0,0,West Market Junction
+J2,3,0,Station Road Junction
+J3,6,0,Old Town Square
+J4,9,0,East Industrial Gate
+J5,0,3,Lake View Circle
+J6,3,3,Central Bus Stand
+J7,6,3,Civic Centre
+J8,9,3,Riverside Junction
+J9,0,6,North Park Gate
+J10,3,6,University Circle
+J11,6,6,Hospital Junction
+J12,9,6,Hilltop Crossing

@@ -1,0 +1,16 @@
+# build output (recreate with build.bat)
+bin/
+*.exe
+*.o
+
+# Python
+__pycache__/
+*.pyc
+
+# editor / Office temp files
+~$*
+.vscode/
+.idea/
+
+# local Claude Code settings
+.claude/

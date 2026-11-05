@@ -1,0 +1,5 @@
+streamlit>=1.66
+pandas>=2.0
+networkx>=3.0
+matplotlib>=3.7
+altair>=5.0

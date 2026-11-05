@@ -1,0 +1,5 @@
+vehicle_id,donor_id,vehicle_type,capacity_kg,speed_kmph,cost_per_km_inr
+V1,D1,scooter,25,25,6
+V2,D2,van,120,30,15
+V3,D3,auto_rickshaw,60,20,10
+V4,D4,mini_truck,80,30,12

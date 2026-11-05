@@ -1,0 +1,6 @@
+ngo_id,name,type,node_id,demand_veg_kg,demand_non_veg_kg,demand_vegan_kg
+N1,Hope Orphanage,orphanage,J5,25,15,8
+N2,Annapurna Food Bank,food_bank,J3,30,15,15
+N3,Safe Haven Night Shelter,shelter,J12,20,15,5
+N4,Little Hearts Childcare,orphanage,J9,25,0,7
+N5,Sahyog Community Kitchen,community_kitchen,J8,0,0,20

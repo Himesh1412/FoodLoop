@@ -1,0 +1,41 @@
+donor_id,name,type,node_id
+D1,Tandoor House Hostel,hostel,J47
+D2,Nilgiri Supermarket,supermarket,J15
+D3,Fresh Basket Supermarket,supermarket,J91
+D4,Peacock Restaurant,restaurant,J65
+D5,Peacock Supermarket,supermarket,J82
+D6,Banyan Banquet Hall,event_organizer,J44
+D7,Blue Moon Banquet Hall,event_organizer,J97
+D8,Lakeview Banquet Hall,event_organizer,J88
+D9,Sagar Hostel,hostel,J25
+D10,Sunrise Restaurant,restaurant,J10
+D11,Orchid Hostel,hostel,J62
+D12,Riverside Banquet Hall,event_organizer,J14
+D13,Evergreen Restaurant,restaurant,J4
+D14,Orchid Supermarket,supermarket,J5
+D15,Royal Banquet Hall,event_organizer,J71
+D16,Peacock Banquet Hall,event_organizer,J79
+D17,Maple Supermarket,supermarket,J66
+D18,Harvest Hostel,hostel,J73
+D19,Jasmine Restaurant,restaurant,J90
+D20,Green Leaf Restaurant,restaurant,J19
+D21,Coconut Grove Banquet Hall,event_organizer,J92
+D22,Ganga Restaurant,restaurant,J24
+D23,Saffron Banquet Hall,event_organizer,J99
+D24,Coconut Grove Restaurant,restaurant,J27
+D25,Heritage Supermarket,supermarket,J23
+D26,Saffron Hostel,hostel,J21
+D27,Heritage Hostel,hostel,J37
+D28,Green Leaf Supermarket,supermarket,J13
+D29,Blue Moon Hostel,hostel,J8
+D30,Heritage Restaurant,restaurant,J18
+D31,Blue Moon Restaurant,restaurant,J60
+D32,City Supermarket,supermarket,J98
+D33,Banyan Supermarket,supermarket,J83
+D34,Maple Banquet Hall,event_organizer,J42
+D35,Silver Spoon Supermarket,supermarket,J51
+D36,Banyan Hostel,hostel,J70
+D37,City Banquet Hall,event_organizer,J55
+D38,Peacock Hostel,hostel,J33
+D39,City Restaurant,restaurant,J76
+D40,Sapphire Hostel,hostel,J28

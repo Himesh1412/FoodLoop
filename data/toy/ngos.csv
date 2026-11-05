@@ -1,0 +1,3 @@
+ngo_id,name,type,node_id,demand_veg_kg,demand_non_veg_kg,demand_vegan_kg
+TN1,Toy Shelter 1,shelter,Z,8,0,0
+TN2,Toy Shelter 2,orphanage,W,8,0,0

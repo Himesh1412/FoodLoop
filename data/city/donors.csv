@@ -1,0 +1,13 @@
+donor_id,name,type,node_id
+D1,Tulsi Supermarket,supermarket,J3
+D2,Tandoor House Hostel,hostel,J7
+D3,Heritage Restaurant,restaurant,J15
+D4,Moonlight Hostel,hostel,J6
+D5,Sapphire Restaurant,restaurant,J4
+D6,Saffron Hostel,hostel,J11
+D7,Banyan Banquet Hall,event_organizer,J20
+D8,Spice Garden Restaurant,restaurant,J2
+D9,Golden Fork Supermarket,supermarket,J26
+D10,Silver Spoon Banquet Hall,event_organizer,J1
+D11,Lotus Banquet Hall,event_organizer,J19
+D12,Sapphire Supermarket,supermarket,J5

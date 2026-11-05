@@ -1,0 +1,3 @@
+package_id,donor_id,item,category,meals,weight_kg,expiry_hours
+TP1,TD1,Veg thali,VEG,20,8,1.0
+TP2,TD2,Veg pulao,VEG,20,8,1.4

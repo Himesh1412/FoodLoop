@@ -1,0 +1,5 @@
+node_id,x_km,y_km,label
+X,0,0,Donor A site
+Y,3,0,Donor B site
+Z,1,0,NGO 1 site
+W,0,2,NGO 2 site
