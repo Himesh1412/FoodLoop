@@ -123,6 +123,7 @@ reset = st.sidebar.button("Reset edits", help="Discard every edit and addition a
 if reset or st.session_state.get("source_key") != source_key:
     st.session_state.work = {k: v.copy() for k, v in load_source().items()}
     st.session_state.source_key = source_key
+    st.session_state.added = {"lots": set(), "ngos": set(), "donors": set()}  # entries added with the forms
     st.session_state.editor_version += 1
 
 defaults = load_params()
@@ -257,14 +258,17 @@ with tab_inputs:
         if add_lot:
             pid = next_id(packages["package_id"], "P")
             work["packages"] = append_row(packages, dict(package_id=pid, **add_lot))
+            st.session_state.added["lots"].add(pid)
             st.session_state.flash = f"Added donation {pid}: {add_lot['weight_kg']} kg {add_lot['item']}."
         if add_ngo:
             nid = next_id(ngos["ngo_id"], "N")
             work["ngos"] = append_row(ngos, dict(ngo_id=nid, **add_ngo))
+            st.session_state.added["ngos"].add(nid)
             st.session_state.flash = f"Added NGO {nid}: {add_ngo['name']}."
         if add_donor:
             did, vid = next_id(donors["donor_id"], "D"), next_id(vehicles["vehicle_id"], "V")
             d = add_donor
+            st.session_state.added["donors"].add(did)
             work["donors"] = append_row(donors, dict(donor_id=did, name=d["name"], type=d["type"], node_id=d["node_id"]))
             work["vehicles"] = append_row(vehicles, dict(
                 vehicle_id=vid, donor_id=did, vehicle_type=d["vehicle_type"], capacity_kg=d["capacity_kg"],
@@ -272,6 +276,8 @@ with tab_inputs:
             st.session_state.flash = f"Added donor {did} ({d['name']}) with vehicle {vid}. Now add its food."
         if remove:
             kind, rid, text = remove
+            for ids in st.session_state.added.values():
+                ids.discard(rid)
             if kind == "lot":
                 work["packages"] = packages[packages["package_id"] != rid].reset_index(drop=True)
             elif kind == "ngo":
@@ -329,6 +335,49 @@ def allocation_frame(rows):
 alloc = allocation_frame(result["allocations"])
 greedy_alloc = allocation_frame(result["greedy_allocations"])
 
+# ------------------------------------------------------------------ new entries vs history
+# Entries added with the forms are shown first in every tab; everything else goes under a History expander.
+
+added = st.session_state.added
+lot_ids, ngo_ids, donor_ids_all = set(packages["package_id"]), set(ngos["ngo_id"]), set(donors["donor_id"])
+new_donors = added["donors"] & donor_ids_all
+new_lots = (added["lots"] & lot_ids) | set(packages[packages["donor_id"].isin(new_donors)]["package_id"])
+new_ngos = added["ngos"] & ngo_ids
+lot_donor = dict(zip(packages["package_id"], packages["donor_id"]))
+focus_donors = new_donors | {lot_donor[p] for p in new_lots}
+has_new = bool(new_lots or new_ngos or new_donors)
+new_ids = new_lots | new_ngos | new_donors
+
+
+def is_new(df, lot_col="package_id", ngo_col="ngo_id"):
+    """Rows that involve a new food lot or a new NGO."""
+    mask = pd.Series(False, index=df.index)
+    if lot_col in df:
+        mask |= df[lot_col].isin(new_lots)
+    if ngo_col in df:
+        mask |= df[ngo_col].isin(new_ngos)
+    return mask
+
+
+def history(what):
+    """Full-data section: folded away when there are new entries to show, plain otherwise."""
+    return st.expander(f"📜 History – {what}") if has_new else st.container()
+
+
+def new_heading():
+    st.markdown("#### 🆕 Your new entries")
+
+
+def tag(i):
+    return f"🆕 {i}" if i in new_ids else i
+
+
+delivered_by_lot = {}
+for t in result["delivery"]["trips"]:
+    for c in t["crates"]:
+        delivered_by_lot[c["package_id"]] = delivered_by_lot.get(c["package_id"], 0) + c["kg"]
+tier_of = {r["package_id"]: r["tier"] for r in result["priority_list"]}
+
 # ------------------------------------------------------------------ overview
 
 with tab_overview:
@@ -371,41 +420,70 @@ with tab_overview:
     versus_greedy(k[3], "Transport cost", inr(m["allocation_cost_paise"]), d, f"{d:+,.2f} ₹ vs Greedy",
                   lower_is_better=True, help="TC = Σ kg × road km × R")
 
-    # ---- two charts
-    left, right = st.columns(2, gap="large")
-    chart_h = 240  # whole chart incl. axes and legend (Streamlit sizes the container to it)
-    with left:
-        st.markdown("**Where the food goes**")
-        outcome = pd.DataFrame([
-            {"method": method, "outcome": label, "kg": mm[key_]}
-            for method, mm in (("MCMF", m), ("Greedy", g))
-            for label, key_ in (("Delivered", "delivered_kg"), ("Undelivered", "undelivered_kg"),
-                                ("Left over", "unallocated_surplus_kg"))])
-        chart = alt.Chart(outcome).mark_bar(cornerRadiusEnd=3).encode(
-            x=alt.X("kg:Q", stack="zero", title="kg"),
-            y=alt.Y("method:N", title=None, sort=["MCMF", "Greedy"]),
-            color=alt.Color("outcome:N", title=None, legend=alt.Legend(orient="bottom"),
-                            scale=alt.Scale(domain=["Delivered", "Undelivered", "Left over"],
-                                            range=["#2e7d32", "#f9a825", "#c62828"])),
-            tooltip=["method", "outcome", "kg"]).properties(height=chart_h)
-        st.altair_chart(chart, width="stretch")
-    with right:
-        st.markdown("**Demand met per NGO** (MCMF)")
-        rows = []
-        for r in ngos.itertuples():
+    # ---- what happened to each new entry
+    if has_new:
+        new_heading()
+        cards = []
+        for r in packages[packages["package_id"].isin(new_lots)].itertuples():
+            rows = alloc[alloc["package_id"] == r.package_id]
+            to = ", ".join(f"{x.ngo_id} {x.ngo} ({x.kg} kg)" for x in rows.itertuples()) or "—"
+            got, kg = int(rows["kg"].sum()), int(r.weight_kg)
+            done = delivered_by_lot.get(r.package_id, 0)
+            status = ("✅ fully delivered" if done == kg else f"🟡 {done} of {kg} kg delivered" if done
+                      else "⛔ expired / no NGO in reach" if got == 0 else "🟠 allocated, not delivered")
+            cards.append({"entry": f"🍱 {r.package_id} – {r.item}", "details": f"{kg} kg {r.category}, "
+                          f"expires in {r.expiry_hours:g} h (tier {tier_of.get(r.package_id, '–')})",
+                          "goes to": to, "status": status})
+        for r in ngos[ngos["ngo_id"].isin(new_ngos)].itertuples():
             need = sum(int(getattr(r, f"demand_{c.lower()}_kg")) for c in CATEGORIES)
-            got = int(alloc[alloc["ngo_id"] == r.ngo_id]["kg"].sum())
-            if need:
-                rows.append({"ngo": r.ngo_id, "name": r.name, "received": got, "demand": need,
-                             "met %": round(100 * got / need, 1)})
-        dem = pd.DataFrame(rows)
-        bars = alt.Chart(dem).mark_bar(cornerRadiusEnd=3, color="#2e7d32").encode(
-            x=alt.X("met %:Q", title="% of demand met", scale=alt.Scale(domain=[0, 100])),
-            y=alt.Y("ngo:N", title=None, sort=alt.EncodingSortField("met %", order="ascending")),
-            tooltip=["ngo", "name", "received", "demand", "met %"])
-        st.altair_chart(bars.properties(height=max(chart_h, 26 * len(dem) + 60)), width="stretch")
+            rows = alloc[alloc["ngo_id"] == r.ngo_id]
+            got = int(rows["kg"].sum())
+            frm = ", ".join(f"{x.package_id} {x.item} ({x.kg} kg)" for x in rows.itertuples()) or "—"
+            status = "✅ demand fully met" if got >= need else f"🟡 {got} of {need} kg met" if got else "⛔ nothing received"
+            cards.append({"entry": f"🏠 {r.ngo_id} – {r.name}", "details": f"needs {need} kg",
+                          "goes to": f"receives from {frm}", "status": status})
+        for r in donors[donors["donor_id"].isin(new_donors)].itertuples():
+            n_lots = int((packages["donor_id"] == r.donor_id).sum())
+            cards.append({"entry": f"🏪 {r.donor_id} – {r.name}", "details": f"{r.type} at {r.node_id}",
+                          "goes to": f"{n_lots} food lot(s) listed above" if n_lots else "—",
+                          "status": "✅ has food" if n_lots else "ℹ️ add a donation for this donor"})
+        st.dataframe(pd.DataFrame(cards), hide_index=True, width="stretch")
 
-    # ---- details on demand
+    # ---- two charts and the full comparison
+    with history("all donors and NGOs"):
+        left, right = st.columns(2, gap="large")
+        chart_h = 240  # whole chart incl. axes and legend (Streamlit sizes the container to it)
+        with left:
+            st.markdown("**Where the food goes**")
+            outcome = pd.DataFrame([
+                {"method": method, "outcome": label, "kg": mm[key_]}
+                for method, mm in (("MCMF", m), ("Greedy", g))
+                for label, key_ in (("Delivered", "delivered_kg"), ("Undelivered", "undelivered_kg"),
+                                    ("Left over", "unallocated_surplus_kg"))])
+            chart = alt.Chart(outcome).mark_bar(cornerRadiusEnd=3).encode(
+                x=alt.X("kg:Q", stack="zero", title="kg"),
+                y=alt.Y("method:N", title=None, sort=["MCMF", "Greedy"]),
+                color=alt.Color("outcome:N", title=None, legend=alt.Legend(orient="bottom"),
+                                scale=alt.Scale(domain=["Delivered", "Undelivered", "Left over"],
+                                                range=["#2e7d32", "#f9a825", "#c62828"])),
+                tooltip=["method", "outcome", "kg"]).properties(height=chart_h)
+            st.altair_chart(chart, width="stretch")
+        with right:
+            st.markdown("**Demand met per NGO** (MCMF)")
+            rows = []
+            for r in ngos.itertuples():
+                need = sum(int(getattr(r, f"demand_{c.lower()}_kg")) for c in CATEGORIES)
+                got = int(alloc[alloc["ngo_id"] == r.ngo_id]["kg"].sum())
+                if need:
+                    rows.append({"ngo": r.ngo_id, "name": r.name, "received": got, "demand": need,
+                                 "met %": round(100 * got / need, 1)})
+            dem = pd.DataFrame(rows)
+            bars = alt.Chart(dem).mark_bar(cornerRadiusEnd=3, color="#2e7d32").encode(
+                x=alt.X("met %:Q", title="% of demand met", scale=alt.Scale(domain=[0, 100])),
+                y=alt.Y("ngo:N", title=None, sort=alt.EncodingSortField("met %", order="ascending")),
+                tooltip=["ngo", "name", "received", "demand", "met %"])
+            st.altair_chart(bars.properties(height=max(chart_h, 26 * len(dem) + 60)), width="stretch")
+
     with st.expander("Full MCMF vs Greedy comparison"):
         rows = [
             ("Total donor supply (kg)", "supply_kg"), ("Total NGO demand (kg)", "demand_kg"),
@@ -435,54 +513,85 @@ with tab_urgency:
     feas = {b["package_id"]: ", ".join(r["ngo_id"] for r in b["routes"]) or "none"
             for b in result["feasibility"]["by_lot"]}
     pri["feasible NGOs"] = pri["package_id"].map(feas)
+    pri_cols = ["rank", "package_id", "item", "donor", "category", "kg", "expiry_hours", "tier", "feasible NGOs"]
 
-    chart = alt.Chart(pri).mark_bar().encode(
-        y=alt.Y("package_id:N", sort=alt.EncodingSortField("rank"), title=None),
-        x=alt.X("expiry_hours:Q", title="Remaining shelf life (h, square-root scale)", scale=alt.Scale(type="sqrt")),
-        color=alt.Color("tier:O", scale=alt.Scale(domain=[1, 2, 3], range=["#c62828", "#f9a825", "#2e7d32"])),
-        tooltip=["rank", "package_id", "item", "category", "kg", "expiry_hours", "tier", "feasible NGOs"])
-    st.altair_chart(chart.properties(height=28 * len(pri) + 40), width="stretch")
-    st.dataframe(pri[["rank", "package_id", "item", "donor", "category", "kg", "expiry_hours", "tier", "feasible NGOs"]],
-                 hide_index=True, width="stretch")
+    def urgency_chart(df):
+        chart = alt.Chart(df).mark_bar(cornerRadiusEnd=3).encode(
+            y=alt.Y("package_id:N", sort=alt.EncodingSortField("rank"), title=None),
+            x=alt.X("expiry_hours:Q", title="Remaining shelf life (h, square-root scale)", scale=alt.Scale(type="sqrt")),
+            color=alt.Color("tier:O", scale=alt.Scale(domain=[1, 2, 3], range=["#c62828", "#f9a825", "#2e7d32"])),
+            tooltip=pri_cols)
+        st.altair_chart(chart.properties(height=28 * len(df) + 60), width="stretch")
 
-    f = result["feasibility"]
-    cols = st.columns(5)
-    cols[0].metric("Feasible pairs", f["kept"])
-    cols[1].metric("Removed: incompatible", f["removed_incompatible"])
-    cols[2].metric("Removed: unreachable", f["removed_unreachable"])
-    cols[3].metric("Removed: too late", f["removed_expiry"])
-    cols[4].metric("Lots already expired", f["expired_lots"])
+    if has_new:
+        new_heading()
+        mine = pri[pri["package_id"].isin(new_lots)]
+        if len(mine):
+            st.caption(f"Rank out of {len(pri)} lots; rank 1 is served first.")
+            urgency_chart(mine)
+            st.dataframe(mine[pri_cols], hide_index=True, width="stretch")
+        else:
+            st.caption("No new food lots yet: new NGOs and donors appear in the other tabs.")
+
+    with history(f"all {len(pri)} food lots"):
+        urgency_chart(pri)
+        st.dataframe(pri[pri_cols], hide_index=True, width="stretch")
+        f = result["feasibility"]
+        cols = st.columns(5)
+        cols[0].metric("Feasible pairs", f["kept"])
+        cols[1].metric("Removed: incompatible", f["removed_incompatible"])
+        cols[2].metric("Removed: unreachable", f["removed_unreachable"])
+        cols[3].metric("Removed: too late", f["removed_expiry"])
+        cols[4].metric("Lots already expired", f["expired_lots"])
 
 # ------------------------------------------------------------------ allocation
 
 with tab_alloc:
     st.subheader("Min Cost Max Flow allocation, tier by tier")
-    tiers = pd.DataFrame(result["tiers"])
-    tiers["lots"] = tiers["lots"].apply(", ".join)
-    tiers["cost (₹)"] = tiers.pop("cost_paise") / 100
-    st.dataframe(tiers.rename(columns={"supply_kg": "supply (kg)", "flow_kg": "placed (kg)",
-                                       "augmentations": "augmenting paths"}),
-                 hide_index=True, width="stretch")
+    un = pd.DataFrame(result["unallocated"], columns=["package_id", "kg"])
+    un.insert(1, "item", un["package_id"].map(lot_item))
+    unmet = pd.DataFrame(result["unmet_demand"], columns=["ngo_id", "category", "kg"])
+    unmet.insert(1, "ngo", unmet["ngo_id"].map(ngo_name))
 
-    left, right = st.columns(2)
-    with left:
-        st.markdown(f"**MCMF** – {m['allocated_kg']} kg, TC {inr(m['allocation_cost_paise'])}")
-        st.dataframe(alloc, hide_index=True, width="stretch")
-    with right:
-        st.markdown(f"**Greedy baseline** – {g['allocated_kg']} kg, TC {inr(g['allocation_cost_paise'])}")
-        st.dataframe(greedy_alloc, hide_index=True, width="stretch")
+    if has_new:
+        new_heading()
+        left, right = st.columns(2)
+        with left:
+            mine = alloc[is_new(alloc)]
+            st.markdown(f"**MCMF** – {int(mine['kg'].sum())} kg")
+            st.dataframe(mine, hide_index=True, width="stretch") if len(mine) else st.caption("Nothing allocated.")
+        with right:
+            mine_g = greedy_alloc[is_new(greedy_alloc)]
+            st.markdown(f"**Greedy baseline** – {int(mine_g['kg'].sum())} kg")
+            st.dataframe(mine_g, hide_index=True, width="stretch") if len(mine_g) else st.caption("Nothing allocated.")
+        for df, text in ((un[is_new(un)], "Left over from your new lots"), (unmet[is_new(unmet)], "Unmet demand of your new NGOs")):
+            if len(df):
+                st.markdown(f"**{text}**")
+                st.dataframe(df, hide_index=True, width="stretch")
 
-    left, right = st.columns(2)
-    with left:
-        st.markdown("**Unallocated surplus (MCMF)**")
-        un = pd.DataFrame(result["unallocated"], columns=["package_id", "kg"])
-        un.insert(1, "item", un["package_id"].map(lot_item))
-        st.dataframe(un, hide_index=True, width="stretch") if len(un) else st.success("None")
-    with right:
-        st.markdown("**Unmet demand (MCMF)**")
-        unmet = pd.DataFrame(result["unmet_demand"], columns=["ngo_id", "category", "kg"])
-        unmet.insert(1, "ngo", unmet["ngo_id"].map(ngo_name))
-        st.dataframe(unmet, hide_index=True, width="stretch") if len(unmet) else st.success("None")
+    with history("all allocations"):
+        tiers = pd.DataFrame(result["tiers"])
+        tiers["lots"] = tiers["lots"].apply(", ".join)
+        tiers["cost (₹)"] = tiers.pop("cost_paise") / 100
+        st.dataframe(tiers.rename(columns={"supply_kg": "supply (kg)", "flow_kg": "placed (kg)",
+                                           "augmentations": "augmenting paths"}),
+                     hide_index=True, width="stretch")
+
+        left, right = st.columns(2)
+        with left:
+            st.markdown(f"**MCMF** – {m['allocated_kg']} kg, TC {inr(m['allocation_cost_paise'])}")
+            st.dataframe(alloc, hide_index=True, width="stretch")
+        with right:
+            st.markdown(f"**Greedy baseline** – {g['allocated_kg']} kg, TC {inr(g['allocation_cost_paise'])}")
+            st.dataframe(greedy_alloc, hide_index=True, width="stretch")
+
+        left, right = st.columns(2)
+        with left:
+            st.markdown("**Unallocated surplus (MCMF)**")
+            st.dataframe(un, hide_index=True, width="stretch") if len(un) else st.success("None")
+        with right:
+            st.markdown("**Unmet demand (MCMF)**")
+            st.dataframe(unmet, hide_index=True, width="stretch") if len(unmet) else st.success("None")
 
 # ------------------------------------------------------------------ network
 
@@ -492,18 +601,28 @@ with tab_network:
     method = c1.radio("Allocation", ["MCMF", "Greedy"], horizontal=True)
     show_routes = c1.checkbox("Show road routes (Dijkstra)", value=False)
     show_junctions = c1.checkbox("Label junctions", value=False)
-    labels = {i: f"{i} – {n}" for i, n in {**donor_name, **ngo_name}.items()}
-    focus = c1.selectbox("Focus on", ["Everyone"] + list(labels), format_func=lambda i: labels.get(i, i),
-                         help="Show only the arrows into or out of one donor or NGO")
+    labels = {i: f"{tag(i)} – {n}" for i, n in {**donor_name, **ngo_name}.items()}
+    options = (["🆕 Your new entries"] if has_new else []) + ["Everyone"] + list(labels)
+    focus = c1.selectbox("Focus on", options, format_func=lambda i: labels.get(i, i),
+                         help="Show only the arrows into or out of the chosen donor(s) or NGO(s)")
+    if focus == "🆕 Your new entries":
+        focus_set = new_ngos | focus_donors
+    elif focus == "Everyone":
+        focus_set = set()
+    else:
+        focus_set = {focus}
 
     pos = {r.node_id: (r.x_km, r.y_km) for r in base["nodes"].itertuples()}
     roads = nx.Graph()
     roads.add_nodes_from(pos)
     roads.add_edges_from((r.u, r.v) for r in base["roads"].itertuples())
 
-    flows = (alloc if method == "MCMF" else greedy_alloc).groupby(["donor_id", "ngo_id"])["kg"].sum()
-    if focus != "Everyone":
-        flows = flows[[focus in pair for pair in flows.index]]
+    source_alloc = alloc if method == "MCMF" else greedy_alloc
+    if focus == "🆕 Your new entries":  # only the flows of new lots or into new NGOs
+        source_alloc = source_alloc[is_new(source_alloc)]
+    flows = source_alloc.groupby(["donor_id", "ngo_id"])["kg"].sum()
+    if focus_set and focus != "🆕 Your new entries":
+        flows = flows[[bool(focus_set & set(pair)) for pair in flows.index]]
     donor_node = dict(zip(donors["donor_id"], donors["node_id"]))
     ngo_node = dict(zip(ngos["ngo_id"], ngos["node_id"]))
 
@@ -511,7 +630,7 @@ with tab_network:
     entities = len(donor_node) + len(ngo_node)
     node_size, font_size = (900, 9) if entities <= 15 else (450, 7) if entities <= 40 else (220, 5)
     kg_labels = len(flows) <= 40
-    if focus != "Everyone":  # the view is zoomed to the focused entity, so full-size symbols fit
+    if focus_set:  # the view is zoomed to the focused entities, so full-size symbols fit
         node_size, font_size, entities = 900, 9, 0
 
     fig, ax = plt.subplots(figsize=(10, 6.5) if entities <= 40 else (13, 10))
@@ -536,6 +655,14 @@ with tab_network:
     for n in ngo_node:
         alloc_graph.add_node(n)
         label_pos[n] = pos[ngo_node[n]]
+    # Entities on the same junction would overlap (and a zero-length arrow breaks the labels): fan them out.
+    by_spot = {}
+    for i, xy in label_pos.items():
+        by_spot.setdefault(xy, []).append(i)
+    for (x, y), ids in by_spot.items():
+        for j, i in enumerate(ids[1:], 1):
+            angle = 2 * math.pi * j / len(ids)
+            label_pos[i] = (x + 0.6 * math.cos(angle), y + 0.6 * math.sin(angle))
     for (d, n), kg in flows.items():
         alloc_graph.add_edge(d, n, kg=int(kg))
 
@@ -551,26 +678,33 @@ with tab_network:
                            node_color=DONOR_COLOR, node_size=node_size)
     nx.draw_networkx_nodes(alloc_graph, label_pos, nodelist=list(ngo_node), ax=ax, node_color=NGO_COLOR,
                            node_size=node_size)
+    highlight = [i for i in alloc_graph.nodes if i in new_ids]
+    if highlight:  # gold ring around entries added with the forms
+        nx.draw_networkx_nodes(alloc_graph, label_pos, nodelist=highlight, ax=ax, node_color="none",
+                               edgecolors="#fbc02d", linewidths=3, node_size=node_size * 1.6)
     nx.draw_networkx_labels(alloc_graph, label_pos, ax=ax, font_color="white", font_weight="bold",
                             font_size=font_size)
     ax.set_axis_off()
     ax.margins(0.08)
-    if focus != "Everyone":  # zoom to the focused entity and its partners
-        involved = {focus} | {x for pair in flows.index for x in pair}
-        xs = [label_pos[i][0] for i in involved]
-        ys = [label_pos[i][1] for i in involved]
+    if focus_set:  # zoom to the focused entities and their partners
+        involved = focus_set | {x for pair in flows.index for x in pair}
+        xs = [label_pos[i][0] for i in involved if i in label_pos]
+        ys = [label_pos[i][1] for i in involved if i in label_pos]
         ax.set_xlim(min(xs) - 1.5, max(xs) + 1.5)
         ax.set_ylim(min(ys) - 1.5, max(ys) + 1.5)
     c2.pyplot(fig, width="stretch")
     plt.close(fig)
 
     c1.markdown(f"<span style='color:{DONOR_COLOR}'>■</span> donor &nbsp; "
-                f"<span style='color:{NGO_COLOR}'>●</span> NGO", unsafe_allow_html=True)
+                f"<span style='color:{NGO_COLOR}'>●</span> NGO"
+                + (" &nbsp; <span style='color:#fbc02d'>◯</span> new" if has_new else ""), unsafe_allow_html=True)
     c1.caption("Arrow width ∝ kg allocated. Straight arcs show who supplies whom; enable road routes to see "
                "the Dijkstra shortest paths used for distance and cost."
                + ("" if kg_labels else " kg labels are hidden at this size: use **Focus on** to read them."))
-    legend = pd.DataFrame({"id": list(donor_name) + list(ngo_name), "name": list(donor_name.values()) + list(ngo_name.values())})
-    c1.dataframe(legend, hide_index=True, width="stretch")
+    with c1.expander("📜 Who is who") if has_new else c1.container():
+        legend = pd.DataFrame({"id": [tag(i) for i in list(donor_name) + list(ngo_name)],
+                               "name": list(donor_name.values()) + list(ngo_name.values())})
+        st.dataframe(legend, hide_index=True, width="stretch")
 
 # ------------------------------------------------------------------ trips
 
@@ -580,12 +714,12 @@ with tab_trips:
     st.caption(f"Crates of up to {p['crate_kg']} kg · tier weights {p['tier_weights']} · shift {p['shift_hours']:g} h · "
                "one NGO per trip · Greedy picks the most urgent destination, Knapsack picks the load.")
     trips = pd.DataFrame(result["delivery"]["trips"])
-    if len(trips):
-        trips["vehicle"] = trips["donor_id"] + " " + trips["vehicle_id"]
-        trips["crates_text"] = trips["crates"].apply(lambda cs: ", ".join(f"{c['crate']} ({c['kg']} kg)" for c in cs))
-        trips["cost (₹)"] = trips["cost_paise"] / 100
+    und = pd.DataFrame(result["delivery"]["undelivered"], columns=["crate", "package_id", "ngo_id", "kg", "reason"])
+    trip_cols = ["vehicle", "trip", "ngo_id", "depart_hours", "served_by_hours", "return_hours", "load_kg",
+                 "capacity_kg", "utilisation_pct", "low_load", "km_one_way", "cost (₹)", "crates_text"]
 
-        gantt = alt.Chart(trips).mark_bar(cornerRadius=3, height=18).encode(
+    def show_trips(df):
+        gantt = alt.Chart(df).mark_bar(cornerRadius=3, height=18).encode(
             y=alt.Y("vehicle:N", title=None),
             x=alt.X("depart_hours:Q", title="Hours from planning time"),
             x2="return_hours:Q",
@@ -593,24 +727,44 @@ with tab_trips:
             opacity=alt.condition("datum.low_load", alt.value(0.45), alt.value(1.0)),
             tooltip=["vehicle", "trip", "ngo_id", "depart_hours", "served_by_hours", "return_hours", "load_kg",
                      "capacity_kg", "utilisation_pct", "cost (₹)", "crates_text"])
-        served = alt.Chart(trips).mark_tick(color=TICK_COLOR, thickness=2, size=20).encode(
+        served = alt.Chart(df).mark_tick(color=TICK_COLOR, thickness=2, size=20).encode(
             y="vehicle:N", x="served_by_hours:Q", tooltip=["vehicle", "trip", "served_by_hours"])
-        st.altair_chart((gantt + served).properties(height=60 * trips["vehicle"].nunique() + 40),
-                        width="stretch")
-        st.caption("Bar = trip from departure to return; yellow tick = food served at the NGO. "
-                   "Faded bars are low-load trips.")
-
-        show = trips[["vehicle", "trip", "ngo_id", "depart_hours", "served_by_hours", "return_hours", "load_kg",
-                      "capacity_kg", "utilisation_pct", "low_load", "km_one_way", "cost (₹)", "crates_text"]]
-        st.dataframe(show.rename(columns={"crates_text": "crates"}), hide_index=True, width="stretch",
+        st.altair_chart((gantt + served).properties(height=60 * df["vehicle"].nunique() + 60), width="stretch")
+        st.dataframe(df[trip_cols].rename(columns={"crates_text": "crates"}), hide_index=True, width="stretch",
                      column_config={"utilisation_pct": st.column_config.ProgressColumn(
                          "load %", min_value=0, max_value=100, format="%.0f%%")})
-    else:
-        st.info("No trips: nothing was allocated, or nothing could be delivered.")
 
-    st.markdown("**Undelivered crates**")
-    und = pd.DataFrame(result["delivery"]["undelivered"], columns=["crate", "package_id", "ngo_id", "kg", "reason"])
-    st.dataframe(und, hide_index=True, width="stretch") if len(und) else st.success("None – every allocated crate arrives before expiry.")
+    if len(trips):
+        trips["vehicle"] = trips["donor_id"] + " " + trips["vehicle_id"]
+        trips["crates_text"] = trips["crates"].apply(lambda cs: ", ".join(f"{c['crate']} ({c['kg']} kg)" for c in cs))
+        trips["cost (₹)"] = trips["cost_paise"] / 100
+        trips["has_new"] = trips["crates"].apply(lambda cs: any(c["package_id"] in new_lots for c in cs)) \
+            | trips["ngo_id"].isin(new_ngos)
+
+    if has_new:
+        new_heading()
+        mine = trips[trips["has_new"]] if len(trips) else trips
+        if len(mine):
+            show_trips(mine)
+        else:
+            st.caption("No trip carries your new entries.")
+        mine_und = und[is_new(und)]
+        if len(mine_und):
+            st.markdown("**Not delivered**")
+            st.dataframe(mine_und, hide_index=True, width="stretch")
+
+    with history(f"all {len(trips)} trips"):
+        if len(trips):
+            show_trips(trips)
+            st.caption("Bar = trip from departure to return; yellow tick = food served at the NGO. "
+                       "Faded bars are low-load trips.")
+        else:
+            st.info("No trips: nothing was allocated, or nothing could be delivered.")
+        st.markdown("**Undelivered crates**")
+        if len(und):
+            st.dataframe(und, hide_index=True, width="stretch")
+        else:
+            st.success("None – every allocated crate arrives before expiry.")
 
 # ------------------------------------------------------------------ distances
 
@@ -618,9 +772,26 @@ with tab_dist:
     st.subheader("Dijkstra shortest road distances (km)")
     dm = result["distance_matrix"]
     matrix = pd.DataFrame(dm["km"], index=dm["donors"], columns=dm["ngos"])
-    st.dataframe(matrix.style.format("{:.1f}", na_rep="unreachable").background_gradient(cmap="Greens_r", axis=None),
-                 width="stretch")
     routes = pd.DataFrame(result["routes"])
     routes["path"] = routes["path"].apply(" → ".join)
-    st.dataframe(routes, hide_index=True, width="stretch")
+
+    def show_matrix(mx):
+        st.dataframe(mx.style.format("{:.1f}", na_rep="unreachable").background_gradient(cmap="Greens_r", axis=None),
+                     width="stretch")
+
+    if has_new:
+        new_heading()
+        rows_ = [d for d in matrix.index if d in focus_donors] or list(matrix.index)
+        cols_ = [n for n in matrix.columns if n in new_ngos] or list(matrix.columns)
+        if not focus_donors:  # only new NGOs: every donor's distance to them
+            rows_ = list(matrix.index)
+        st.caption("Rows: donors of your new food · columns: your new NGOs (all NGOs if you added none).")
+        show_matrix(matrix.loc[rows_, cols_])
+        mine = routes[routes["donor"].isin(focus_donors) & routes["ngo"].isin(cols_) if focus_donors
+                      else routes["ngo"].isin(new_ngos)]
+        st.dataframe(mine, hide_index=True, width="stretch")
+
+    with history("all donors and NGOs"):
+        show_matrix(matrix)
+        st.dataframe(routes, hide_index=True, width="stretch")
     st.caption(f"{result['road_network']['junctions']} junctions, {result['road_network']['roads']} roads.")
