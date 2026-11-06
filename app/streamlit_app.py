@@ -559,11 +559,17 @@ with tab_alloc:
         with left:
             mine = alloc[is_new(alloc)]
             st.markdown(f"**MCMF** – {int(mine['kg'].sum())} kg")
-            st.dataframe(mine, hide_index=True, width="stretch") if len(mine) else st.caption("Nothing allocated.")
+            if len(mine):
+                st.dataframe(mine, hide_index=True, width="stretch")
+            else:
+                st.caption("Nothing allocated.")
         with right:
             mine_g = greedy_alloc[is_new(greedy_alloc)]
             st.markdown(f"**Greedy baseline** – {int(mine_g['kg'].sum())} kg")
-            st.dataframe(mine_g, hide_index=True, width="stretch") if len(mine_g) else st.caption("Nothing allocated.")
+            if len(mine_g):
+                st.dataframe(mine_g, hide_index=True, width="stretch")
+            else:
+                st.caption("Nothing allocated.")
         for df, text in ((un[is_new(un)], "Left over from your new lots"), (unmet[is_new(unmet)], "Unmet demand of your new NGOs")):
             if len(df):
                 st.markdown(f"**{text}**")
@@ -588,10 +594,16 @@ with tab_alloc:
         left, right = st.columns(2)
         with left:
             st.markdown("**Unallocated surplus (MCMF)**")
-            st.dataframe(un, hide_index=True, width="stretch") if len(un) else st.success("None")
+            if len(un):
+                st.dataframe(un, hide_index=True, width="stretch")
+            else:
+                st.success("None")
         with right:
             st.markdown("**Unmet demand (MCMF)**")
-            st.dataframe(unmet, hide_index=True, width="stretch") if len(unmet) else st.success("None")
+            if len(unmet):
+                st.dataframe(unmet, hide_index=True, width="stretch")
+            else:
+                st.success("None")
 
 # ------------------------------------------------------------------ network
 
