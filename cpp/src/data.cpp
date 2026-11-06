@@ -205,6 +205,8 @@ Params loadParams(const std::string& path) {
     p.rate_inr_per_kg_km = parseNumber(values["rate_inr_per_kg_km"], path + " rate_inr_per_kg_km");
     if (values.count("vehicle_fixed_cost_inr"))
         p.vehicle_fixed_cost_inr = parseNumber(values["vehicle_fixed_cost_inr"], path + " vehicle_fixed_cost_inr");
+    if (values.count("time_gap_weight"))
+        p.time_gap_weight = parseNumber(values["time_gap_weight"], path + " time_gap_weight");
     if (values.count("unmet_penalty_inr"))
         p.unmet_penalty_inr = parseNumber(values["unmet_penalty_inr"], path + " unmet_penalty_inr");
     if (p.rate_inr_per_kg_km < 0) throw std::runtime_error(path + ": rate_inr_per_kg_km must be >= 0");

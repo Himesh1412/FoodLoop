@@ -21,6 +21,7 @@ struct LotRoute {
     double km;                 // shortest road distance d_ij
     double travel_hours;       // t_ij = d_ij / vehicle speed
     long long cost_paise_per_kg;  // C_ij = D_ij * R, in paise (integer for exact Bellman-Ford)
+    double wait_hours = 0;        // forced wait with the food on board: NGO opens after even the latest pickup arrives
 };
 
 struct Feasibility {

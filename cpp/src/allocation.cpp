@@ -1,6 +1,7 @@
 #include "allocation.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 #include "greedy.hpp"
 #include "mcmf.hpp"
@@ -109,7 +110,10 @@ AllocationPlan allocateByTiers(const Dataset& data, const Feasibility& feas, con
                     node = it->second;
                 }
 
-                PlacedEdge pe = {net.addEdge(lotNode, node, lot.weight_kg, r.cost_paise_per_kg), k, &r};
+                // Time-aware MCMF: pairs whose windows do not line up cost more (transport cost TC is unchanged).
+                const long long timeCost =
+                    static_cast<long long>(std::floor(params.time_gap_weight * r.wait_hours * 100.0 + 0.5));
+                PlacedEdge pe = {net.addEdge(lotNode, node, lot.weight_kg, r.cost_paise_per_kg + timeCost), k, &r};
                 placed.push_back(pe);
                 ++edges;
             }

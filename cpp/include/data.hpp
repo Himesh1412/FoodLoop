@@ -96,6 +96,7 @@ struct Params {
     double rate_inr_per_kg_km;                 // R in C_ij = D_ij * R (allocation cost per kg)
     double vehicle_fixed_cost_inr = 0;  // optional: hiring cost per vehicle used (base paper: 500)
     double unmet_penalty_inr = 0;       // optional: penalty per unmet unit of pickup or delivery (base paper: 1000)
+    double time_gap_weight = 0;         // optional: time-aware MCMF, extra cost per kg per hour of forced waiting
 };
 
 struct Dataset {

@@ -79,6 +79,8 @@ Feasibility computeFeasibility(const Dataset& data, const DistanceMatrix& m, con
             r.travel_hours = hours;
             // C_ij = D_ij * R. The vehicle's own Rs/km rate is a per-trip cost, used only in Stage 5.
             r.cost_paise_per_kg = static_cast<long long>(std::floor(km * params.rate_inr_per_kg_km * 100.0 + 0.5));
+            // Time alignment: even collecting at the end of the pickup window, the food would wait this long.
+            r.wait_hours = std::max(0.0, ngo.open_hours - (lot.pickupClose() + data.donors[d].pickupService(params.handling_hours) + hours));
             f.byLot[k].push_back(r);
             ++f.keptPairs;
         }
