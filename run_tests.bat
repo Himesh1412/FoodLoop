@@ -6,7 +6,7 @@ cd /d "%~dp0"
 call "%~dp0build.bat" || exit /b 1
 
 set FAILED=0
-for %%t in (test_day2 test_day3 test_day4 test_eval) do (
+for %%t in (test_day2 test_day3 test_day4 test_eval test_fleet test_routing) do (
     echo.
     echo === %%t
     bin\%%t.exe . || set FAILED=1
@@ -15,7 +15,7 @@ echo.
 echo === test_day6
 bin\test_day6.exe || set FAILED=1
 
-for %%d in (toy demo city large) do (
+for %%d in (toy demo city large city_fleet) do (
     echo.
     echo === NetworkX cross-check: data\%%d
     python cpp\tests\verify_with_networkx.py data/%%d || set FAILED=1

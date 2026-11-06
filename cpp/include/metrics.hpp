@@ -9,6 +9,8 @@
 
 #include "allocation.hpp"
 #include "data.hpp"
+#include "dispatch.hpp"
+#include "routing.hpp"
 #include "trips.hpp"
 
 namespace foodloop {
@@ -28,9 +30,22 @@ struct Metrics {
     int lowLoadTrips;
     double avgUtilisationPct;
     double allocationMs;             // ET
+    double km = 0;                   // fleet mode: total vehicle km including returns to depots
+    int vehiclesUsed = 0;            // fleet mode: vehicles with at least one trip
+    // Base-paper objective (Dubey & Tanksale 2023, eq. 1): routing cost + hiring cost per vehicle used
+    // + penalty x (unmet pickup + unmet delivery). Fleet mode only; 0 penalty/hiring cost unless configured.
+    long long unmetUnits = 0;        // (supply - delivered) + (demand - delivered)
+    double fixedCost = 0;
+    double objective = 0;
 };
 
 Metrics computeMetrics(const AllocationPlan& plan, const DeliveryPlan& delivery, const Params& params,
                        double allocationMs);
+
+// Fleet mode: same metrics, with delivery figures from the shared-vehicle dispatch.
+Metrics computeMetrics(const AllocationPlan& plan, const FleetPlan& fleet, const Params& params, double allocationMs);
+
+// Fleet mode with multi-stop routing: one trip = one vehicle route; utilisation = peak load / capacity.
+Metrics computeMetrics(const AllocationPlan& plan, const RoutePlan& routes, const Params& params, double allocationMs);
 
 }  // namespace foodloop

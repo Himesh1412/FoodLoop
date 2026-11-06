@@ -28,6 +28,8 @@
 #include "allocation.hpp"
 #include "data.hpp"
 #include "dijkstra.hpp"
+#include "dispatch.hpp"
+#include "routing.hpp"
 #include "feasibility.hpp"
 #include "graph.hpp"
 #include "greedy.hpp"
@@ -64,6 +66,19 @@ struct Report {
     AllocationPlan greedyPlan;  // baseline
     DeliveryPlan greedyDelivery;
     Metrics greedyMetrics;
+
+    // Fleet mode (depots.csv present): shared-vehicle dispatch replaces the donor-vehicle trips.
+    FleetPlan fleet;          // MCMF allocation + cost-aware dispatch (proposed)
+    FleetPlan greedyFleet;    // Greedy allocation + cost-aware dispatch
+    FleetPlan nearestFleet;   // unused, kept for the text ablation line
+    Metrics nearestMetrics;   // MCMF + direct-trip dispatch (ablation: no multi-stop routing)
+
+    // Multi-stop routing (enhancements 3, 6) and joint allocation-routing feedback (enhancement 9).
+    RoutePlan routes;         // proposed: MCMF + routing with feedback
+    AllocationPlan jointPlan; // the allocation that `routes` serves
+    RoutePlan greedyRoutes;   // Greedy allocation + routing
+    RoutePlan singleRoutes;   // MCMF + routing, one round (ablation: no feedback)
+    Metrics singleMetrics;
 
     StageTimes stageMs;
 };
@@ -156,6 +171,45 @@ void printMetrics(const Metrics& m, const Metrics& g) {
     row("ET  allocation time (ms, average)", fixedText(m.allocationMs, 4), fixedText(g.allocationMs, 4));
 }
 
+void printFleetText(const Report& r) {
+    const Dataset& data = r.data;
+    const RoutePlan& rp = r.routes;
+    std::cout << "\n== Stage 5: Multi-stop routing for the MCMF plan (" << rp.feedbackRounds
+              << " allocation-routing rounds, " << rp.blockedPairs << " pairs blocked by feedback) ==\n";
+    for (const Route& route : rp.routes) {
+        const Vehicle& veh = data.vehicles[route.vehicle];
+        std::cout << veh.id << " " << veh.type << " from " << veh.depot_id << " (" << veh.capacity_kg << " kg): ";
+        if (route.stops.empty()) {
+            std::cout << "not hired\n";
+            continue;
+        }
+        std::cout << route.stops.size() << " stops, " << route.deliveredKg << " kg delivered, peak load "
+                  << route.maxLoadKg << " kg, " << fixedText(route.km, 1) << " km, " << rupees(route.costPaise)
+                  << ", back " << fixedText(route.endHours, 2) << " h\n";
+        for (const RouteStop& st : route.stops) {
+            const Request& q = rp.requests[st.request];
+            std::cout << "    " << (st.pickup ? "pickup   " : "delivery ") << std::left << std::setw(6)
+                      << (st.pickup ? data.packages[q.lot].donor_id : data.ngos[q.ngo].id) << std::right
+                      << std::setw(5) << st.kg << " kg of " << data.packages[q.lot].id << "  arrive "
+                      << fixedText(st.arriveHours, 2) << " start " << fixedText(st.startHours, 2) << " leave "
+                      << fixedText(st.departHours, 2) << "  load " << st.loadAfterKg << "\n";
+        }
+    }
+    std::cout << "\nNot routed\n";
+    bool any = false;
+    for (const Request& q : rp.requests) {
+        if (q.servedKg >= q.kg) continue;
+        any = true;
+        std::cout << "  " << data.packages[q.lot].id << " -> " << data.ngos[q.ngo].id << "  " << q.kg - q.servedKg
+                  << " kg\n";
+    }
+    if (!any) std::cout << "  none\n";
+    std::cout << "\nObjective (routing + hiring + unmet penalty): proposed " << fixedText(r.metrics.objective, 2)
+              << " | MCMF + routing, no feedback " << fixedText(r.singleMetrics.objective, 2)
+              << " | MCMF + direct trips " << fixedText(r.nearestMetrics.objective, 2) << " | Greedy + routing "
+              << fixedText(r.greedyMetrics.objective, 2) << "\n";
+}
+
 void printText(const Report& r) {
     const Dataset& data = r.data;
     const DistanceMatrix& m = r.matrix;
@@ -204,6 +258,7 @@ void printText(const Report& r) {
               << " h; R = Rs " << fixedText(r.params.rate_inr_per_kg_km, 2) << " per kg-km) ==\n";
     std::cout << "  pairs kept " << r.feas.keptPairs << ", removed: incompatible " << r.feas.removedIncompatible
               << ", unreachable " << r.feas.removedUnreachable << ", too late " << r.feas.removedExpiry
+              << ", outside time window " << r.feas.removedWindow
               << "; lots already expired " << r.feas.expiredLots << "\n";
     for (size_t k = 0; k < data.packages.size(); ++k) {
         const Package& p = data.packages[k];
@@ -251,6 +306,12 @@ void printText(const Report& r) {
 
     std::cout << "\nGreedy baseline allocation (expiry order -> nearest feasible NGO)\n";
     for (const Allocation& a : r.greedyPlan.allocations) printAllocationRow(data, a);
+
+    if (data.fleetMode()) {
+        printFleetText(r);
+        printMetrics(r.metrics, r.greedyMetrics);
+        return;
+    }
 
     std::cout << "\n== Stage 5: Vehicle trips for the MCMF plan (crates of " << r.params.crate_kg
               << " kg, Knapsack per trip, shift " << r.params.shift_hours << " h) ==\n";
@@ -321,7 +382,107 @@ void jsonMetrics(std::ostream& o, const Metrics& m) {
       << ", \"trip_cost_paise\": " << m.tripCostPaise << ", \"trip_cost_inr\": " << jsonNumber(m.tripCostPaise / 100.0)
       << ", \"trips\": " << m.trips << ", \"low_load_trips\": " << m.lowLoadTrips
       << ", \"avg_utilisation_pct\": " << jsonNumber(m.avgUtilisationPct)
+      << ", \"km\": " << jsonNumber(m.km) << ", \"vehicles_used\": " << m.vehiclesUsed
+      << ", \"unmet_units\": " << m.unmetUnits << ", \"fixed_cost\": " << jsonNumber(m.fixedCost)
+      << ", \"objective\": " << jsonNumber(m.objective)
       << ", \"execution_ms\": " << std::setprecision(6) << m.allocationMs << "}";
+}
+
+void jsonStop(std::ostream& o, const Stop& s) {
+    o << "{\"kind\": " << jsonString(s.kind) << ", \"place\": " << jsonString(s.place)
+      << ", \"arrive_hours\": " << jsonNumber(s.arriveHours) << ", \"service_start_hours\": "
+      << jsonNumber(s.serviceStartHours) << ", \"depart_hours\": " << jsonNumber(s.departHours)
+      << ", \"load_after_kg\": " << s.loadAfterKg << "}";
+}
+
+void jsonFleetUndelivered(std::ostream& o, const Dataset& data, const FleetPlan& f) {
+    o << "[";
+    for (size_t i = 0; i < f.undelivered.size(); ++i) {
+        const Crate& c = f.crates[f.undelivered[i].crate];
+        o << (i ? ",\n" : "\n") << "      {\"crate\": " << jsonString(crateLabel(data, c))
+          << ", \"package_id\": " << jsonString(data.packages[c.lot].id)
+          << ", \"ngo_id\": " << jsonString(data.ngos[c.ngo].id) << ", \"kg\": " << c.kg
+          << ", \"reason\": " << jsonString(f.undelivered[i].reason) << "}";
+    }
+    o << "\n    ]";
+}
+
+// Fleet mode: "delivery" keeps the donor-mode schema (one trip per vehicle route) plus the stop list.
+void jsonFleet(std::ostream& o, const Report& r) {
+    const Dataset& data = r.data;
+    const RoutePlan& rp = r.routes;
+    o << "  \"mode\": \"fleet\",\n  \"planner\": \"mcmf + multi-stop routing + feedback\",\n"
+      << "  \"feedback\": {\"rounds\": " << rp.feedbackRounds << ", \"blocked_pairs\": " << rp.blockedPairs << "},\n"
+      << "  \"depots\": [";
+    for (size_t i = 0; i < data.depots.size(); ++i)
+        o << (i ? ", " : "") << "{\"depot_id\": " << jsonString(data.depots[i].id)
+          << ", \"name\": " << jsonString(data.depots[i].name) << ", \"type\": " << jsonString(data.depots[i].type)
+          << ", \"node_id\": " << jsonString(data.depots[i].node_id) << "}";
+    o << "],\n  \"delivery\": {\"trips\": [";
+    bool first = true;
+    for (const Route& route : rp.routes) {
+        if (route.stops.empty()) continue;
+        const Vehicle& veh = data.vehicles[route.vehicle];
+        const Request& q0 = rp.requests[route.stops.front().request];
+        int lastDelivery = 0;
+        for (size_t k = 0; k < route.stops.size(); ++k)
+            if (!route.stops[k].pickup) lastDelivery = static_cast<int>(k);
+        const double util = route.capacityKg ? 100.0 * route.maxLoadKg / route.capacityKg : 0;
+        o << (first ? "\n" : ",\n") << "      {\"vehicle_id\": " << jsonString(veh.id)
+          << ", \"vehicle_label\": " << jsonString(veh.id + " " + veh.type + " @" + veh.depot_id)
+          << ", \"depot_id\": " << jsonString(veh.depot_id)
+          << ", \"donor_id\": " << jsonString(data.packages[q0.lot].donor_id) << ", \"trip\": 1"
+          << ", \"from\": " << jsonString(veh.depot_id) << ", \"ngo_id\": " << jsonString(data.ngos[q0.ngo].id)
+          << ", \"depart_hours\": 0, \"served_by_hours\": " << jsonNumber(route.stops[lastDelivery].departHours)
+          << ", \"return_hours\": " << jsonNumber(route.endHours) << ", \"load_kg\": " << route.maxLoadKg
+          << ", \"capacity_kg\": " << route.capacityKg << ", \"utilisation_pct\": " << jsonNumber(util)
+          << ", \"low_load\": " << (util < r.params.low_load_pct ? "true" : "false")
+          << ", \"km_one_way\": " << jsonNumber(route.km) << ", \"cost_paise\": " << route.costPaise
+          << ", \"stops\": [";
+        for (size_t k = 0; k < route.stops.size(); ++k) {
+            const RouteStop& st = route.stops[k];
+            const Request& q = rp.requests[st.request];
+            o << (k ? ", " : "") << "{\"kind\": \"" << (st.pickup ? "pickup" : "delivery") << "\", \"place\": "
+              << jsonString(st.pickup ? data.packages[q.lot].donor_id : data.ngos[q.ngo].id)
+              << ", \"package_id\": " << jsonString(data.packages[q.lot].id) << ", \"kg\": " << st.kg
+              << ", \"arrive_hours\": " << jsonNumber(st.arriveHours)
+              << ", \"service_start_hours\": " << jsonNumber(st.startHours)
+              << ", \"depart_hours\": " << jsonNumber(st.departHours) << ", \"load_after_kg\": " << st.loadAfterKg << "}";
+        }
+        o << "], \"crates\": [";
+        bool firstCrate = true;
+        for (const RouteStop& st : route.stops) {
+            if (st.pickup) continue;
+            const Request& q = rp.requests[st.request];
+            o << (firstCrate ? "" : ", ") << "{\"crate\": "
+              << jsonString(data.packages[q.lot].id + ">" + data.ngos[q.ngo].id) << ", \"package_id\": "
+              << jsonString(data.packages[q.lot].id) << ", \"kg\": " << st.kg << ", \"tier\": " << q.tier + 1 << "}";
+            firstCrate = false;
+        }
+        o << "]}";
+        first = false;
+    }
+    o << "\n    ],\n    \"undelivered\": [";
+    first = true;
+    for (const Request& q : rp.requests) {
+        if (q.servedKg >= q.kg) continue;
+        o << (first ? "\n" : ",\n") << "      {\"crate\": " << jsonString(data.packages[q.lot].id + ">" + data.ngos[q.ngo].id)
+          << ", \"package_id\": " << jsonString(data.packages[q.lot].id)
+          << ", \"ngo_id\": " << jsonString(data.ngos[q.ngo].id) << ", \"kg\": " << q.kg - q.servedKg
+          << ", \"reason\": \"no feasible route\"}";
+        first = false;
+    }
+    o << "\n    ],\n    \"vehicles\": [";
+    for (size_t i = 0; i < rp.routes.size(); ++i) {
+        const Route& route = rp.routes[i];
+        const Vehicle& veh = data.vehicles[route.vehicle];
+        o << (i ? ",\n" : "\n") << "      {\"vehicle_id\": " << jsonString(veh.id) << ", \"type\": "
+          << jsonString(veh.type) << ", \"depot_id\": " << jsonString(veh.depot_id)
+          << ", \"capacity_kg\": " << veh.capacity_kg << ", \"stops\": " << route.stops.size()
+          << ", \"delivered_kg\": " << route.deliveredKg << ", \"km\": " << jsonNumber(route.km)
+          << ", \"cost_paise\": " << route.costPaise << ", \"end_hours\": " << jsonNumber(route.endHours) << "}";
+    }
+    o << "\n    ]\n  },\n";
 }
 
 void printJson(const Report& r) {
@@ -383,7 +544,8 @@ void printJson(const Report& r) {
     o << "  \"feasibility\": {\"kept\": " << r.feas.keptPairs
       << ", \"removed_incompatible\": " << r.feas.removedIncompatible
       << ", \"removed_unreachable\": " << r.feas.removedUnreachable
-      << ", \"removed_expiry\": " << r.feas.removedExpiry << ", \"expired_lots\": " << r.feas.expiredLots
+      << ", \"removed_expiry\": " << r.feas.removedExpiry << ", \"removed_window\": " << r.feas.removedWindow
+      << ", \"expired_lots\": " << r.feas.expiredLots
       << ",\n    \"by_lot\": [";
     for (size_t k = 0; k < data.packages.size(); ++k) {
         o << (k ? ",\n" : "\n") << "      {\"package_id\": " << jsonString(data.packages[k].id) << ", \"routes\": [";
@@ -437,7 +599,11 @@ void printJson(const Report& r) {
     }
     o << "\n  ],\n";
 
+    if (data.fleetMode()) {
+        jsonFleet(o, r);
+    } else {
     const DeliveryPlan& dl = r.delivery;
+    o << "  \"mode\": \"donor\",\n";
     o << "  \"delivery\": {\"trips\": [";
     for (size_t i = 0; i < dl.trips.size(); ++i) {
         const Trip& t = dl.trips[i];
@@ -466,11 +632,18 @@ void printJson(const Report& r) {
           << ", \"reason\": " << jsonString(dl.undelivered[i].reason) << "}";
     }
     o << "\n    ]\n  },\n";
+    }
 
     o << "  \"metrics\": {\n    \"mcmf\": ";
     jsonMetrics(o, r.metrics);
     o << ",\n    \"greedy\": ";
     jsonMetrics(o, r.greedyMetrics);
+    if (data.fleetMode()) {
+        o << ",\n    \"mcmf_no_feedback\": ";
+        jsonMetrics(o, r.singleMetrics);
+        o << ",\n    \"mcmf_direct_dispatch\": ";
+        jsonMetrics(o, r.nearestMetrics);
+    }
     o << "\n  },\n";
 
     const StageTimes& s = r.stageMs;
@@ -518,12 +691,23 @@ int main(int argc, char** argv) {
         r.stageMs.greedyRanking = averageMs([&] { r.priority = expiryPriorityList(r.data.packages); }, repeat);
 
         r.stageMs.mcmf = averageMs([&] { r.plan = allocateByTiers(r.data, r.feas, r.params); }, repeat);
-        r.stageMs.trips = averageMs([&] { r.delivery = planTrips(r.data, r.plan, r.params); }, repeat);
-        r.metrics = computeMetrics(r.plan, r.delivery, r.params, r.stageMs.mcmf);
-
         r.stageMs.greedyAllocation = averageMs([&] { r.greedyPlan = allocateGreedy(r.data, r.feas, r.params); }, repeat);
-        r.greedyDelivery = planTrips(r.data, r.greedyPlan, r.params);
-        r.greedyMetrics = computeMetrics(r.greedyPlan, r.greedyDelivery, r.params, r.stageMs.greedyAllocation);
+        if (r.data.fleetMode()) {
+            r.stageMs.trips =
+                averageMs([&] { r.routes = planJointly(r.data, r.graph, r.feas, r.params, r.jointPlan); }, repeat);
+            r.metrics = computeMetrics(r.jointPlan, r.routes, r.params, r.stageMs.mcmf);
+            r.greedyRoutes = routeAllocation(r.data, r.graph, r.greedyPlan, r.params);
+            r.greedyMetrics = computeMetrics(r.greedyPlan, r.greedyRoutes, r.params, r.stageMs.greedyAllocation);
+            r.singleRoutes = routeAllocation(r.data, r.graph, r.plan, r.params);
+            r.singleMetrics = computeMetrics(r.plan, r.singleRoutes, r.params, r.stageMs.mcmf);
+            r.fleet = dispatchBest(r.data, r.graph, r.plan, r.params);
+            r.nearestMetrics = computeMetrics(r.plan, r.fleet, r.params, r.stageMs.mcmf);
+        } else {
+            r.stageMs.trips = averageMs([&] { r.delivery = planTrips(r.data, r.plan, r.params); }, repeat);
+            r.metrics = computeMetrics(r.plan, r.delivery, r.params, r.stageMs.mcmf);
+            r.greedyDelivery = planTrips(r.data, r.greedyPlan, r.params);
+            r.greedyMetrics = computeMetrics(r.greedyPlan, r.greedyDelivery, r.params, r.stageMs.greedyAllocation);
+        }
 
         if (json) printJson(r);
         else printText(r);

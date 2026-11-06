@@ -15,6 +15,17 @@ A Design and Analysis of Algorithms (DAA) project. FoodLoop decides how surplus 
 
 All algorithms are written in C++ (`cpp/`). The Streamlit dashboard (`app/`) handles input and visualisation only.
 
+### Fleet mode (base-paper setting)
+
+A dataset with a `depots.csv` file switches to **fleet mode**, which implements the ten enhancements in
+[docs/enhancements.md](docs/enhancements.md): shared vehicles starting at depots or volunteer hubs, food-ready
+times and pickup windows, NGO delivery windows and service times, **multi-stop routing** with load tracking
+and split service, and **joint allocation–routing** by iterative feedback between MCMF and routing. Plans are
+scored with the base paper's objective (routing cost + hiring cost per vehicle + penalty per unmet unit).
+
+`tools/base_paper.py` rebuilds the 180 instances of the base paper (Dubey & Tanksale, 2023) from the public
+Cordeau et al. MDVRPTW set and runs FoodLoop and its ablations on them; results go to `results/base_paper.md`.
+
 ## Run it (Windows)
 
 Requirements: g++ (MinGW, C++14 or later) and Python 3.10+.
@@ -34,7 +45,7 @@ Command-line engine: `bin\foodloop.exe data\demo` (add `--json` for machine-read
 |---|---|
 | `cpp/` | Engine source (`include/`, `src/`) and tests (`tests/`, including a NetworkX cross-check) |
 | `app/` | Streamlit dashboard and the Python ↔ C++ bridge |
-| `data/` | Datasets: `toy`, `demo`, `city`, `large` (synthetic) |
+| `data/` | Datasets: `toy`, `demo`, `city`, `large`, `city_fleet` (synthetic; `city_fleet` uses fleet mode) |
 | `config/` | Parameters: handling time, tier limits, crate size, shift length, cost rate R |
 | `tools/` | Dataset generator, scenario experiments, scalability study |
 | `results/` | Experiment outputs (tables, CSV, charts) |

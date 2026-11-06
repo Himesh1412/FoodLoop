@@ -175,11 +175,13 @@ with tab_inputs:
     node_label = dict(zip(base["nodes"]["node_id"], base["nodes"]["label"]))
     place = lambda n: f"{n} – {node_label.get(n, '')}"  # noqa: E731
     key = st.session_state.editor_version
+    fleet = "depots" in base  # shared vehicles at depots, time windows, multi-stop routing
 
     # ---- forms: the only way to change the inputs; each change is applied below, then the page redraws
     st.markdown("#### ➕ Add or remove data")
     add_lot = add_ngo = add_donor = remove = None
-    f_lot, f_ngo, f_donor, f_remove = st.tabs(["🍱 Food donation", "🏠 NGO request", "🏪 Donor + vehicle", "🗑️ Remove"])
+    f_lot, f_ngo, f_donor, f_remove = st.tabs(
+        ["🍱 Food donation", "🏠 NGO request", "🏪 Donor" if fleet else "🏪 Donor + vehicle", "🗑️ Remove"])
     with f_lot, st.form("add_lot", clear_on_submit=True):
         c = st.columns(3)
         donor_opts = base["donors"]["donor_id"].dropna().tolist()
@@ -191,9 +193,15 @@ with tab_inputs:
         lot_kg = c[0].number_input("Quantity (kg)", 1, 1000, 10)
         lot_meals = c[1].number_input("Meals (approx.)", 0, 5000, 25)
         lot_exp = c[2].number_input("Expires in (hours)", 0.0, 500.0, 4.0, 0.25, help="0 = already expired")
+        if fleet:
+            c = st.columns(2)
+            lot_ready = c[0].number_input("Food ready at (hours)", 0.0, 500.0, 0.0, 0.25)
+            lot_close = c[1].number_input("Pickup window closes at (hours)", 0.0, 500.0, 3.0, 0.25)
         if st.form_submit_button("Add donation", type="primary"):
             add_lot = dict(donor_id=lot_donor, item=lot_item.strip() or "Food item", category=lot_cat,
                            meals=lot_meals, weight_kg=lot_kg, expiry_hours=lot_exp)
+            if fleet:
+                add_lot.update(ready_hours=lot_ready, pickup_close_hours=max(lot_close, lot_ready))
     with f_ngo, st.form("add_ngo", clear_on_submit=True):
         c = st.columns(3)
         ngo_nm = c[0].text_input("NGO name", placeholder="e.g. Sunrise Shelter")
@@ -202,19 +210,29 @@ with tab_inputs:
         c = st.columns(3)
         ngo_dem = {cat: c[i].number_input(f"Needs {cat} (kg)", 0, 1000, 10 if cat == "VEG" else 0)
                    for i, cat in enumerate(CATEGORIES)}
+        if fleet:
+            c = st.columns(2)
+            ngo_open = c[0].number_input("Opens at (hours)", 0.0, 100.0, 0.0, 0.25)
+            ngo_close = c[1].number_input("Closes at (hours, 0 = no limit)", 0.0, 100.0, 0.0, 0.25)
         if st.form_submit_button("Add NGO", type="primary"):
             add_ngo = dict(name=ngo_nm.strip() or "New NGO", type=ngo_type, node_id=ngo_node,
                            **{f"demand_{cat.lower()}_kg": v for cat, v in ngo_dem.items()})
+            if fleet:
+                add_ngo.update(open_hours=ngo_open, close_hours=ngo_close if ngo_close > ngo_open else -1)
     with f_donor, st.form("add_donor", clear_on_submit=True):
         c = st.columns(3)
         don_nm = c[0].text_input("Donor name", placeholder="e.g. Green Leaf Cafe")
         don_type = c[1].selectbox("Type", ["restaurant", "supermarket", "hostel", "event_organizer"])
         don_node = c[2].selectbox("Location", node_ids, format_func=place, key="donor_node")
-        c = st.columns(4)
-        veh_type = c[0].selectbox("Vehicle", ["scooter", "auto_rickshaw", "mini_truck", "van", "cycle_cart"])
-        veh_cap = c[1].number_input("Capacity (kg)", 1, 1000, 25)
-        veh_speed = c[2].number_input("Speed (km/h)", 1.0, 100.0, 25.0)
-        veh_cost = c[3].number_input("Cost (₹ per km)", 0.0, 200.0, 6.0)
+        veh_type, veh_cap, veh_speed, veh_cost = "van", 25, 25.0, 6.0
+        if not fleet:  # donor mode: every donor brings its own vehicle
+            c = st.columns(4)
+            veh_type = c[0].selectbox("Vehicle", ["scooter", "auto_rickshaw", "mini_truck", "van", "cycle_cart"])
+            veh_cap = c[1].number_input("Capacity (kg)", 1, 1000, 25)
+            veh_speed = c[2].number_input("Speed (km/h)", 1.0, 100.0, 25.0)
+            veh_cost = c[3].number_input("Cost (₹ per km)", 0.0, 200.0, 6.0)
+        else:
+            st.caption("Shared fleet: vehicles start at the depots, so a new donor needs no vehicle of its own.")
         if st.form_submit_button("Add donor", type="primary"):
             add_donor = dict(name=don_nm.strip() or "New donor", type=don_type, node_id=don_node,
                              vehicle_type=veh_type, capacity_kg=veh_cap, speed_kmph=veh_speed, cost_per_km_inr=veh_cost)
@@ -236,9 +254,17 @@ with tab_inputs:
     st.caption("Change these with the forms above. **Reset edits** in the sidebar restores the original data.")
     donors, vehicles, packages, ngos = base["donors"], base["vehicles"], base["packages"], base["ngos"]
     v_donors, v_lots, v_ngos, v_roads = st.tabs([
-        f"Donors & vehicles ({len(donors)})", f"Food lots ({len(packages)})", f"NGOs ({len(ngos)})", "Road network"])
+        f"Donors ({len(donors)}) & vehicles ({len(vehicles)})" if fleet else f"Donors & vehicles ({len(donors)})",
+        f"Food lots ({len(packages)})", f"NGOs ({len(ngos)})", "Road network"])
     with v_donors:
-        st.dataframe(donors.merge(vehicles, on="donor_id", how="left"), hide_index=True, width="stretch")
+        if fleet:
+            d1, d2 = st.columns(2)
+            d1.markdown("**Donors**")
+            d1.dataframe(donors, hide_index=True, width="stretch")
+            d2.markdown("**Shared vehicles and their depots**")
+            d2.dataframe(vehicles.merge(base["depots"], on="depot_id", how="left"), hide_index=True, width="stretch")
+        else:
+            st.dataframe(donors.merge(vehicles, on="donor_id", how="left"), hide_index=True, width="stretch")
     with v_lots:
         st.dataframe(packages, hide_index=True, width="stretch",
                      column_config={"weight_kg": "kg", "expiry_hours": "expires in (h)"})
@@ -270,9 +296,10 @@ with tab_inputs:
             d = add_donor
             st.session_state.added["donors"].add(did)
             work["donors"] = append_row(donors, dict(donor_id=did, name=d["name"], type=d["type"], node_id=d["node_id"]))
-            work["vehicles"] = append_row(vehicles, dict(
-                vehicle_id=vid, donor_id=did, vehicle_type=d["vehicle_type"], capacity_kg=d["capacity_kg"],
-                speed_kmph=d["speed_kmph"], cost_per_km_inr=d["cost_per_km_inr"]))
+            if not fleet:
+                work["vehicles"] = append_row(vehicles, dict(
+                    vehicle_id=vid, donor_id=did, vehicle_type=d["vehicle_type"], capacity_kg=d["capacity_kg"],
+                    speed_kmph=d["speed_kmph"], cost_per_km_inr=d["cost_per_km_inr"]))
             st.session_state.flash = f"Added donor {did} ({d['name']}) with vehicle {vid}. Now add its food."
         if remove:
             kind, rid, text = remove
@@ -284,7 +311,8 @@ with tab_inputs:
                 work["ngos"] = ngos[ngos["ngo_id"] != rid].reset_index(drop=True)
             else:
                 for t in ("donors", "vehicles", "packages"):
-                    work[t] = work[t][work[t]["donor_id"] != rid].reset_index(drop=True)
+                    if "donor_id" in work[t]:
+                        work[t] = work[t][work[t]["donor_id"] != rid].reset_index(drop=True)
             st.session_state.flash = f"Removed {text}."
         st.session_state.work = work
         st.session_state.editor_version += 1
@@ -309,6 +337,8 @@ with tab_inputs:
 
 tables = {"nodes": base["nodes"], "roads": base["roads"], "donors": donors, "vehicles": vehicles,
           "packages": packages, "ngos": ngos}
+if fleet:
+    tables["depots"] = base["depots"]
 
 try:
     result = optimise(tuple((k, to_csv_text(v)) for k, v in tables.items()), tuple(params.items()))
@@ -494,6 +524,10 @@ with tab_overview:
             ("Trips", "trips"), ("Low-load trips", "low_load_trips"), ("Average trip load (%)", "avg_utilisation_pct"),
             ("ET – allocation time (ms)", "execution_ms"),
         ]
+        if fleet:
+            rows += [("Vehicles hired", "vehicles_used"), ("Vehicle km", "km"),
+                     ("Unmet pickup + delivery (kg)", "unmet_units"),
+                     ("Base-paper objective (routing + hiring + penalty)", "objective")]
         table = pd.DataFrame({"Metric": [r[0] for r in rows],
                               "MCMF": [m[r[1]] for r in rows], "Greedy": [g[r[1]] for r in rows]})
         st.dataframe(table, hide_index=True, width="stretch",
@@ -541,7 +575,7 @@ with tab_urgency:
         cols[0].metric("Feasible pairs", f["kept"])
         cols[1].metric("Removed: incompatible", f["removed_incompatible"])
         cols[2].metric("Removed: unreachable", f["removed_unreachable"])
-        cols[3].metric("Removed: too late", f["removed_expiry"])
+        cols[3].metric("Removed: too late / outside window", f["removed_expiry"] + f.get("removed_window", 0))
         cols[4].metric("Lots already expired", f["expired_lots"])
 
 # ------------------------------------------------------------------ allocation
@@ -696,6 +730,11 @@ with tab_network:
                                edgecolors="#fbc02d", linewidths=3, node_size=node_size * 1.6)
     nx.draw_networkx_labels(alloc_graph, label_pos, ax=ax, font_color="white", font_weight="bold",
                             font_size=font_size)
+    for dep in result.get("depots", []):  # fleet mode: depots / volunteer hubs
+        x, y = pos[dep["node_id"]]
+        ax.scatter([x], [y], marker="^", s=node_size * 0.9, color="#616161", zorder=4)
+        ax.annotate(dep["depot_id"], (x, y), textcoords="offset points", xytext=(0, -14), ha="center",
+                    fontsize=font_size, color="#424242")
     ax.set_axis_off()
     ax.margins(0.08)
     if focus_set:  # zoom to the focused entities and their partners
@@ -707,7 +746,8 @@ with tab_network:
     c2.pyplot(fig, width="stretch")
     plt.close(fig)
 
-    c1.markdown(f"<span style='color:{DONOR_COLOR}'>■</span> donor &nbsp; "
+    c1.markdown(("<span style='color:#616161'>▲</span> depot &nbsp; " if result.get("depots") else "")
+                + f"<span style='color:{DONOR_COLOR}'>■</span> donor &nbsp; "
                 f"<span style='color:{NGO_COLOR}'>●</span> NGO"
                 + (" &nbsp; <span style='color:#fbc02d'>◯</span> new" if has_new else ""), unsafe_allow_html=True)
     c1.caption("Arrow width ∝ kg allocated. Straight arcs show who supplies whom; enable road routes to see "
@@ -721,62 +761,108 @@ with tab_network:
 # ------------------------------------------------------------------ trips
 
 with tab_trips:
-    st.subheader("Vehicle trips (0/1 Knapsack loading, MCMF plan)")
-    p = result["params"]
-    st.caption(f"Crates of up to {p['crate_kg']} kg · tier weights {p['tier_weights']} · shift {p['shift_hours']:g} h · "
-               "one NGO per trip · Greedy picks the most urgent destination, Knapsack picks the load.")
-    trips = pd.DataFrame(result["delivery"]["trips"])
+  if fleet:
+    st.subheader("Vehicle routes (multi-stop routing on the MCMF plan, with feedback)")
+    fb = result.get("feedback", {})
+    st.caption(f"Shared vehicles from {len(result.get('depots', []))} depots · each route picks up and delivers at "
+               f"several stops within time windows · {fb.get('rounds', 1)} allocation-routing rounds, "
+               f"{fb.get('blocked_pairs', 0)} pairs re-allocated by feedback.")
+    routes_ = result["delivery"]["trips"]
+    rows = []
+    for t in routes_:
+        for k, sp in enumerate(t["stops"], 1):
+            rows.append({"vehicle": t["vehicle_label"], "stop": k, "kind": sp["kind"], "place": sp["place"],
+                         "lot": sp["package_id"], "kg": sp["kg"], "arrive (h)": sp["arrive_hours"],
+                         "service start (h)": sp["service_start_hours"], "depart (h)": sp["depart_hours"],
+                         "load after (kg)": sp["load_after_kg"], "capacity_kg": t["capacity_kg"]})
+    stops_df = pd.DataFrame(rows)
     und = pd.DataFrame(result["delivery"]["undelivered"], columns=["crate", "package_id", "ngo_id", "kg", "reason"])
-    trip_cols = ["vehicle", "trip", "ngo_id", "depart_hours", "served_by_hours", "return_hours", "load_kg",
-                 "capacity_kg", "utilisation_pct", "low_load", "km_one_way", "cost (₹)", "crates_text"]
 
-    def show_trips(df):
-        gantt = alt.Chart(df).mark_bar(cornerRadius=3, height=18).encode(
-            y=alt.Y("vehicle:N", title=None),
-            x=alt.X("depart_hours:Q", title="Hours from planning time"),
-            x2="return_hours:Q",
-            color=alt.Color("ngo_id:N", title="NGO"),
-            opacity=alt.condition("datum.low_load", alt.value(0.45), alt.value(1.0)),
-            tooltip=["vehicle", "trip", "ngo_id", "depart_hours", "served_by_hours", "return_hours", "load_kg",
-                     "capacity_kg", "utilisation_pct", "cost (₹)", "crates_text"])
-        served = alt.Chart(df).mark_tick(color=TICK_COLOR, thickness=2, size=20).encode(
-            y="vehicle:N", x="served_by_hours:Q", tooltip=["vehicle", "trip", "served_by_hours"])
-        st.altair_chart((gantt + served).properties(height=60 * df["vehicle"].nunique() + 60), width="stretch")
-        st.dataframe(df[trip_cols].rename(columns={"crates_text": "crates"}), hide_index=True, width="stretch",
-                     column_config={"utilisation_pct": st.column_config.ProgressColumn(
-                         "load %", min_value=0, max_value=100, format="%.0f%%")})
+    def show_routes(df):
+        bars = alt.Chart(df).mark_bar(height=14).encode(
+            y=alt.Y("vehicle:N", title=None), x=alt.X("service start (h):Q", title="Hours from planning time"),
+            x2="depart (h):Q", color=alt.Color("kind:N", scale=alt.Scale(domain=["pickup", "delivery"],
+                                                                          range=[DONOR_COLOR, NGO_COLOR])),
+            tooltip=["vehicle", "stop", "kind", "place", "lot", "kg", "arrive (h)", "service start (h)",
+                     "depart (h)", "load after (kg)"])
+        st.altair_chart(bars.properties(height=34 * df["vehicle"].nunique() + 60), width="stretch")
+        st.dataframe(df.drop(columns=["capacity_kg"]), hide_index=True, width="stretch")
 
-    if len(trips):
-        trips["vehicle"] = trips["donor_id"] + " " + trips["vehicle_id"]
-        trips["crates_text"] = trips["crates"].apply(lambda cs: ", ".join(f"{c['crate']} ({c['kg']} kg)" for c in cs))
-        trips["cost (₹)"] = trips["cost_paise"] / 100
-        trips["has_new"] = trips["crates"].apply(lambda cs: any(c["package_id"] in new_lots for c in cs)) \
-            | trips["ngo_id"].isin(new_ngos)
-
-    if has_new:
+    if has_new and len(stops_df):
         new_heading()
-        mine = trips[trips["has_new"]] if len(trips) else trips
+        mine = stops_df[stops_df["lot"].isin(new_lots) | stops_df["place"].isin(new_ngos | new_donors)]
         if len(mine):
-            show_trips(mine)
+            show_routes(stops_df[stops_df["vehicle"].isin(mine["vehicle"])])
         else:
-            st.caption("No trip carries your new entries.")
-        mine_und = und[is_new(und)]
-        if len(mine_und):
-            st.markdown("**Not delivered**")
-            st.dataframe(mine_und, hide_index=True, width="stretch")
-
-    with history(f"all {len(trips)} trips"):
-        if len(trips):
-            show_trips(trips)
-            st.caption("Bar = trip from departure to return; yellow tick = food served at the NGO. "
-                       "Faded bars are low-load trips.")
+            st.caption("No route serves your new entries.")
+    with history(f"all {len(routes_)} routes"):
+        if len(stops_df):
+            show_routes(stops_df)
+            st.caption("Green = pickup service, orange = delivery service; the load column is tracked after every stop.")
         else:
-            st.info("No trips: nothing was allocated, or nothing could be delivered.")
-        st.markdown("**Undelivered crates**")
+            st.info("No routes: nothing could be delivered.")
+        st.markdown("**Not routed**")
         if len(und):
             st.dataframe(und, hide_index=True, width="stretch")
         else:
-            st.success("None – every allocated crate arrives before expiry.")
+            st.success("None – every allocated kilogram is on a route.")
+  else:
+      st.subheader("Vehicle trips (0/1 Knapsack loading, MCMF plan)")
+      p = result["params"]
+      st.caption(f"Crates of up to {p['crate_kg']} kg · tier weights {p['tier_weights']} · shift {p['shift_hours']:g} h · "
+                 "one NGO per trip · Greedy picks the most urgent destination, Knapsack picks the load.")
+      trips = pd.DataFrame(result["delivery"]["trips"])
+      und = pd.DataFrame(result["delivery"]["undelivered"], columns=["crate", "package_id", "ngo_id", "kg", "reason"])
+      trip_cols = ["vehicle", "trip", "ngo_id", "depart_hours", "served_by_hours", "return_hours", "load_kg",
+                   "capacity_kg", "utilisation_pct", "low_load", "km_one_way", "cost (₹)", "crates_text"]
+
+      def show_trips(df):
+          gantt = alt.Chart(df).mark_bar(cornerRadius=3, height=18).encode(
+              y=alt.Y("vehicle:N", title=None),
+              x=alt.X("depart_hours:Q", title="Hours from planning time"),
+              x2="return_hours:Q",
+              color=alt.Color("ngo_id:N", title="NGO"),
+              opacity=alt.condition("datum.low_load", alt.value(0.45), alt.value(1.0)),
+              tooltip=["vehicle", "trip", "ngo_id", "depart_hours", "served_by_hours", "return_hours", "load_kg",
+                       "capacity_kg", "utilisation_pct", "cost (₹)", "crates_text"])
+          served = alt.Chart(df).mark_tick(color=TICK_COLOR, thickness=2, size=20).encode(
+              y="vehicle:N", x="served_by_hours:Q", tooltip=["vehicle", "trip", "served_by_hours"])
+          st.altair_chart((gantt + served).properties(height=60 * df["vehicle"].nunique() + 60), width="stretch")
+          st.dataframe(df[trip_cols].rename(columns={"crates_text": "crates"}), hide_index=True, width="stretch",
+                       column_config={"utilisation_pct": st.column_config.ProgressColumn(
+                           "load %", min_value=0, max_value=100, format="%.0f%%")})
+
+      if len(trips):
+          trips["vehicle"] = trips["vehicle_label"] if "vehicle_label" in trips else trips["donor_id"] + " " + trips["vehicle_id"]
+          trips["crates_text"] = trips["crates"].apply(lambda cs: ", ".join(f"{c['crate']} ({c['kg']} kg)" for c in cs))
+          trips["cost (₹)"] = trips["cost_paise"] / 100
+          trips["has_new"] = trips["crates"].apply(lambda cs: any(c["package_id"] in new_lots for c in cs)) \
+              | trips["ngo_id"].isin(new_ngos)
+
+      if has_new:
+          new_heading()
+          mine = trips[trips["has_new"]] if len(trips) else trips
+          if len(mine):
+              show_trips(mine)
+          else:
+              st.caption("No trip carries your new entries.")
+          mine_und = und[is_new(und)]
+          if len(mine_und):
+              st.markdown("**Not delivered**")
+              st.dataframe(mine_und, hide_index=True, width="stretch")
+
+      with history(f"all {len(trips)} trips"):
+          if len(trips):
+              show_trips(trips)
+              st.caption("Bar = trip from departure to return; yellow tick = food served at the NGO. "
+                         "Faded bars are low-load trips.")
+          else:
+              st.info("No trips: nothing was allocated, or nothing could be delivered.")
+          st.markdown("**Undelivered crates**")
+          if len(und):
+              st.dataframe(und, hide_index=True, width="stretch")
+          else:
+              st.success("None – every allocated crate arrives before expiry.")
 
 # ------------------------------------------------------------------ distances
 

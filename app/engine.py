@@ -18,7 +18,7 @@ PARAMS_FILE = ROOT / "config" / "params.csv"
 
 TABLES = ["nodes", "roads", "donors", "vehicles", "packages", "ngos"]
 CATEGORIES = ["VEG", "NON_VEG", "VEGAN"]
-TEXT_COLUMNS = {"node_id", "u", "v", "donor_id", "ngo_id", "package_id", "vehicle_id"}
+TEXT_COLUMNS = {"node_id", "u", "v", "donor_id", "ngo_id", "package_id", "vehicle_id", "depot_id"}
 
 
 class EngineError(Exception):
@@ -32,7 +32,10 @@ def list_datasets():
 def load_dataset(name):
     """Reads one dataset folder into {table name: DataFrame}."""
     folder = DATA_DIR / name
-    return {t: pd.read_csv(folder / f"{t}.csv", dtype={c: str for c in TEXT_COLUMNS}) for t in TABLES}
+    tables = {t: pd.read_csv(folder / f"{t}.csv", dtype={c: str for c in TEXT_COLUMNS}) for t in TABLES}
+    if (folder / "depots.csv").exists():  # fleet mode: shared vehicles start at depots
+        tables["depots"] = pd.read_csv(folder / "depots.csv", dtype={c: str for c in TEXT_COLUMNS})
+    return tables
 
 
 def load_params():

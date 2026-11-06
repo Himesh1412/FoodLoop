@@ -35,6 +35,12 @@ struct CsvRow {
     std::map<std::string, std::string> cells;
     std::string where;  // "file line N", used in error messages
 
+    bool has(const std::string& col) const { return cells.count(col) > 0; }
+
+    double numberOr(const std::string& col, double fallback) const {
+        return has(col) && !text(col).empty() ? number(col) : fallback;
+    }
+
     const std::string& text(const std::string& col) const {
         std::map<std::string, std::string>::const_iterator it = cells.find(col);
         if (it == cells.end()) throw std::runtime_error(where + ": missing column '" + col + "'");
@@ -128,6 +134,8 @@ void validateDataset(const Dataset& d) {
     uniqueIds(d.ngos, &Ngo::id, "NGO");
     uniqueIds(d.vehicles, &Vehicle::id, "vehicle");
     uniqueIds(d.packages, &Package::id, "lot");
+    const std::set<std::string> depots = uniqueIds(d.depots, &Depot::id, "depot");
+    for (const Depot& x : d.depots) require(nodes.count(x.node_id) > 0, "depot " + x.id + " is at an unknown junction");
 
     for (const Road& r : d.roads) {
         require(nodes.count(r.u) && nodes.count(r.v), "road " + r.u + "-" + r.v + " uses an unknown junction");
@@ -140,7 +148,8 @@ void validateDataset(const Dataset& d) {
             require(n.demandFor(cat) >= 0, "NGO " + n.id + " has negative " + cat + " demand");
     }
     for (const Vehicle& v : d.vehicles) {
-        require(donors.count(v.donor_id) > 0, "vehicle " + v.id + " belongs to an unknown donor");
+        if (d.fleetMode()) require(depots.count(v.depot_id) > 0, "vehicle " + v.id + " starts at an unknown depot");
+        else require(donors.count(v.donor_id) > 0, "vehicle " + v.id + " belongs to an unknown donor");
         require(v.capacity_kg > 0, "vehicle " + v.id + " must have capacity > 0");
         require(v.speed_kmph > 0, "vehicle " + v.id + " must have speed > 0");
         require(v.cost_per_km_inr >= 0, "vehicle " + v.id + " has a negative cost per km");
@@ -150,7 +159,14 @@ void validateDataset(const Dataset& d) {
         require(p.weight_kg > 0, "lot " + p.id + " must have weight_kg > 0");
         require(p.meals >= 0, "lot " + p.id + " has negative meals");
         require(p.expiry_hours >= 0, "lot " + p.id + " has negative expiry_hours (use 0 for expired food)");
+        require(p.ready_hours >= 0, "lot " + p.id + " has negative ready_hours");
+        require(p.pickupClose() >= p.ready_hours, "lot " + p.id + " closes for pickup before it is ready");
     }
+    for (const Ngo& n : d.ngos) {
+        require(n.open_hours >= 0, "NGO " + n.id + " has negative open_hours");
+        require(!n.hasClose() || n.close_hours >= n.open_hours, "NGO " + n.id + " closes before it opens");
+    }
+    if (d.fleetMode()) require(!d.vehicles.empty(), "fleet mode needs at least one vehicle");
 }
 
 Params loadParams(const std::string& path) {
@@ -187,6 +203,10 @@ Params loadParams(const std::string& path) {
     p.shift_hours = parseNumber(values["shift_hours"], path + " shift_hours");
     p.low_load_pct = parseNumber(values["low_load_pct"], path + " low_load_pct");
     p.rate_inr_per_kg_km = parseNumber(values["rate_inr_per_kg_km"], path + " rate_inr_per_kg_km");
+    if (values.count("vehicle_fixed_cost_inr"))
+        p.vehicle_fixed_cost_inr = parseNumber(values["vehicle_fixed_cost_inr"], path + " vehicle_fixed_cost_inr");
+    if (values.count("unmet_penalty_inr"))
+        p.unmet_penalty_inr = parseNumber(values["unmet_penalty_inr"], path + " unmet_penalty_inr");
     if (p.rate_inr_per_kg_km < 0) throw std::runtime_error(path + ": rate_inr_per_kg_km must be >= 0");
     if (p.handling_hours < 0) throw std::runtime_error(path + ": handling_hours must be >= 0");
     return p;
@@ -218,13 +238,16 @@ Dataset loadDataset(const std::string& dir) {
         donor.name = r.text("name");
         donor.type = r.text("type");
         donor.node_id = r.text("node_id");
+        donor.service_hours = r.numberOr("service_hours", -1);
         d.donors.push_back(donor);
     }
 
     for (const CsvRow& r : readCsv(dir + "/vehicles.csv")) {
         Vehicle v;
         v.id = r.text("vehicle_id");
-        v.donor_id = r.text("donor_id");
+        v.donor_id = r.has("donor_id") ? r.text("donor_id") : "";
+        v.depot_id = r.has("depot_id") ? r.text("depot_id") : "";
+        v.fixed_cost_inr = r.numberOr("fixed_cost_inr", -1);
         v.type = r.text("vehicle_type");
         v.capacity_kg = r.integer("capacity_kg");
         v.speed_kmph = r.number("speed_kmph");
@@ -243,6 +266,8 @@ Dataset loadDataset(const std::string& dir) {
         p.meals = r.integer("meals");
         p.weight_kg = r.integer("weight_kg");
         p.expiry_hours = r.number("expiry_hours");
+        p.ready_hours = r.numberOr("ready_hours", 0);
+        p.pickup_close_hours = r.numberOr("pickup_close_hours", -1);
         d.packages.push_back(p);
     }
 
@@ -257,7 +282,23 @@ Dataset loadDataset(const std::string& dir) {
             for (char& c : col) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
             n.demand_kg[cat] = r.integer(col);
         }
+        n.open_hours = r.numberOr("open_hours", 0);
+        n.close_hours = r.numberOr("close_hours", -1);
+        n.service_hours = r.numberOr("service_hours", -1);
         d.ngos.push_back(n);
+    }
+
+    std::ifstream depotsFile((dir + "/depots.csv").c_str());
+    if (depotsFile) {
+        depotsFile.close();
+        for (const CsvRow& r : readCsv(dir + "/depots.csv")) {
+            Depot x;
+            x.id = r.text("depot_id");
+            x.name = r.text("name");
+            x.type = r.text("type");
+            x.node_id = r.text("node_id");
+            d.depots.push_back(x);
+        }
     }
 
     validateDataset(d);

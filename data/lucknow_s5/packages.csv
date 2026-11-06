@@ -1,0 +1,26 @@
+package_id,donor_id,item,category,meals,weight_kg,expiry_hours,ready_hours,pickup_close_hours
+F1,P1,cooked meals,VEG,55,55,6.0,0,4.5
+F2,P2,cooked meals,VEG,10,10,6.0,0,4.5
+F3,P3,cooked meals,VEG,11,11,6.0,0,4.5
+F4,P4,cooked meals,VEG,67,67,6.0,0,4.5
+F5,P5,cooked meals,VEG,74,74,6.0,0,4.5
+F6,P6,cooked meals,VEG,39,39,6.0,0,4.5
+F7,P7,cooked meals,VEG,65,65,6.0,0,4.5
+F8,P8,cooked meals,VEG,36,36,6.0,0,4.5
+F9,P9,cooked meals,VEG,11,11,6.0,0,4.5
+F10,P10,cooked meals,VEG,29,29,6.0,0,4.5
+F11,P11,cooked meals,VEG,77,77,6.0,0,4.5
+F12,P12,cooked meals,VEG,89,89,6.0,0,4.5
+F13,P13,cooked meals,VEG,35,35,6.0,0,4.5
+F14,P14,cooked meals,VEG,80,80,6.0,0,4.5
+F15,P15,cooked meals,VEG,31,31,6.0,0,4.5
+F16,P16,cooked meals,VEG,73,73,6.0,0,4.5
+F17,P17,cooked meals,VEG,40,40,6.0,0,4.5
+F18,P18,cooked meals,VEG,73,73,6.0,0,4.5
+F19,P19,cooked meals,VEG,14,14,6.0,0,4.5
+F20,P20,cooked meals,VEG,38,38,6.0,0,4.5
+F21,P21,cooked meals,VEG,13,13,6.0,0,4.5
+F22,P22,cooked meals,VEG,92,92,6.0,0,4.5
+F23,P23,cooked meals,VEG,13,13,6.0,0,4.5
+F24,P24,cooked meals,VEG,72,72,6.0,0,4.5
+F25,P25,cooked meals,VEG,61,61,6.0,0,4.5

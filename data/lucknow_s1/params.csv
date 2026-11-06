@@ -1,0 +1,10 @@
+key,value
+handling_hours,0
+tier_boundaries_hours,6;24
+crate_kg,10
+tier_weights,3;2;1
+shift_hours,6.0
+low_load_pct,20
+rate_inr_per_kg_km,1
+vehicle_fixed_cost_inr,500
+unmet_penalty_inr,1000

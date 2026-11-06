@@ -113,9 +113,46 @@ def build_roads(rng, rows, cols, spacing):
     return nodes, roads
 
 
+FLEET_TYPES = [  # shared vehicles in fleet mode: (type, capacity kg, speed km/h, Rs per km)
+    ("scooter", 25, 25, 6), ("auto_rickshaw", 60, 20, 10), ("mini_truck", 80, 30, 12), ("van", 120, 30, 15)]
+
+
+def add_fleet(nodes, sites, donors, packages, ngos, seed, depots, per_depot, capacity_scale):
+    """Fleet mode: depots/volunteer hubs with shared vehicles, food-ready times, pickup and NGO windows.
+    Uses its own random stream, so the donors, lots and NGOs are identical to the donor-mode dataset."""
+    frng = random.Random(seed * 7919 + 1)
+    free = sorted(set(nodes) - set(sites))
+    if depots > len(free):
+        raise SystemExit(f"{depots} depots do not fit on {len(free)} free junctions")
+    hubs = []
+    for k, node in enumerate(frng.sample(free, depots), 1):
+        kind = "depot" if k == 1 or frng.random() < 0.5 else "volunteer"
+        hubs.append((f"H{k}", f"{'Central Depot' if kind == 'depot' else 'Volunteer Hub'} {k}", kind, node))
+    vehicles = []
+    for hub in hubs:
+        for _ in range(per_depot):
+            vtype, cap, speed, cost = frng.choice(FLEET_TYPES)
+            vehicles.append((f"V{len(vehicles) + 1}", hub[0], vtype, max(5, round(cap * capacity_scale)), speed, cost))
+    donor_type = {d[0]: d[2] for d in donors}
+    lots = []
+    for p in packages:  # (id, donor, item, cat, meals, kg, expiry)
+        early = donor_type[p[1]] == "supermarket"
+        ready = round(frng.uniform(0, 1.0 if early else 3.0) * 4) / 4
+        ready = min(ready, max(0.0, p[6] - 0.75))  # keep at least 45 min of shelf life after it is ready
+        close = round(min(p[6], ready + frng.uniform(2, 5)) * 4) / 4
+        lots.append(p + (ready, max(close, ready)))
+    windows = []
+    for n in ngos:
+        open_h = round(frng.uniform(0.5, 2.0) * 4) / 4 if frng.random() < 0.4 else 0
+        close_h = round((open_h + frng.uniform(4, 8)) * 4) / 4 if frng.random() < 0.4 else -1
+        windows.append(n + (open_h, close_h))
+    return hubs, vehicles, lots, windows
+
+
 def generate(out, rows, cols, n_donors, n_ngos, seed, spacing=2.5, demand_ratio=1.0, expiry_scale=1.0,
-             capacity_scale=1.0, diet="mixed", quiet=False):
-    """Writes one dataset to folder `out`. The default options reproduce data/city and data/large."""
+             capacity_scale=1.0, diet="mixed", quiet=False, depots=0, vehicles_per_depot=2):
+    """Writes one dataset to folder `out`. The default options reproduce data/city and data/large.
+    depots > 0 switches to fleet mode (shared vehicles at depots, time windows)."""
     rng = random.Random(seed)
     if n_donors + n_ngos > rows * cols:
         raise SystemExit(f"{n_donors + n_ngos} donors + NGOs do not fit on {rows * cols} junctions")
@@ -158,6 +195,19 @@ def generate(out, rows, cols, n_donors, n_ngos, seed, spacing=2.5, demand_ratio=
 
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
+    fleet_tables = {}
+    if depots > 0:
+        hubs, vehicles, lots, windows = add_fleet(nodes, sites, donors, packages, ngos, seed, depots,
+                                                  vehicles_per_depot, capacity_scale)
+        fleet_tables = {
+            "depots": (["depot_id", "name", "type", "node_id"], hubs),
+            "vehicles": (["vehicle_id", "depot_id", "vehicle_type", "capacity_kg", "speed_kmph", "cost_per_km_inr"],
+                         vehicles),
+            "packages": (["package_id", "donor_id", "item", "category", "meals", "weight_kg", "expiry_hours",
+                          "ready_hours", "pickup_close_hours"], lots),
+            "ngos": (["ngo_id", "name", "type", "node_id", "demand_veg_kg", "demand_non_veg_kg", "demand_vegan_kg",
+                      "open_hours", "close_hours"], windows),
+        }
     tables = {
         "nodes": (["node_id", "x_km", "y_km", "label"],
                   [(k, x, y, f"Junction {k[1:]}") for k, (x, y) in nodes.items()]),
@@ -167,6 +217,10 @@ def generate(out, rows, cols, n_donors, n_ngos, seed, spacing=2.5, demand_ratio=
         "packages": (["package_id", "donor_id", "item", "category", "meals", "weight_kg", "expiry_hours"], packages),
         "ngos": (["ngo_id", "name", "type", "node_id", "demand_veg_kg", "demand_non_veg_kg", "demand_vegan_kg"], ngos),
     }
+    tables.update(fleet_tables)
+    stale = out / "depots.csv"
+    if not fleet_tables and stale.exists():
+        stale.unlink()
     for table, (header, rows_) in tables.items():
         with open(out / f"{table}.csv", "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
@@ -197,11 +251,14 @@ def main():
     ap.add_argument("--capacity-scale", type=float, default=1.0, help="multiply every vehicle capacity")
     ap.add_argument("--diet", choices=["mixed", "strict"], default="mixed",
                     help="strict: more vegetarian-only and vegan-only NGOs")
+    ap.add_argument("--depots", type=int, default=0,
+                    help="fleet mode: number of depots / volunteer hubs with shared vehicles (0 = donor-owned vehicles)")
+    ap.add_argument("--vehicles-per-depot", type=int, default=2)
     a = ap.parse_args()
     if a.name in ("demo", "toy") and not a.out:
         raise SystemExit("demo and toy are hand-built test datasets; choose another name")
     generate(a.out or ROOT / "data" / a.name, a.rows, a.cols, a.donors, a.ngos, a.seed, a.spacing, a.demand_ratio,
-             a.expiry_scale, a.capacity_scale, a.diet)
+             a.expiry_scale, a.capacity_scale, a.diet, depots=a.depots, vehicles_per_depot=a.vehicles_per_depot)
 
 
 if __name__ == "__main__":

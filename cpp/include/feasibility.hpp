@@ -2,7 +2,11 @@
 // A lot k at donor i may go to NGO j only if
 //   - compatibility: NGO j has demand for the lot's category,
 //   - reachability:  there is a road path from i to j,
-//   - expiry:        travel_time(i, j) + handling_hours <= expiry of k.
+//   - expiry:        ready_k + travel_time(i, j) + handling_hours <= expiry of k,
+//   - windows:       ready_k <= pickup close of k, and the earliest service at j starts
+//                    before NGO j closes (optional windows; always true when absent).
+// Donor mode uses the donor's own vehicle speed. Fleet mode uses the fastest shared vehicle,
+// an optimistic bound: the dispatch stage then checks the real vehicle timeline.
 #pragma once
 
 #include <vector>
@@ -27,6 +31,7 @@ struct Feasibility {
     int removedIncompatible = 0;
     int removedUnreachable = 0;
     int removedExpiry = 0;
+    int removedWindow = 0;  // pickup window closes before the food is ready, or NGO closed on arrival
     int expiredLots = 0;  // lots with no shelf life left at planning time (expiry_hours == 0)
 };
 

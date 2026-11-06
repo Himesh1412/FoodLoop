@@ -52,7 +52,10 @@ def main(dataset):
     for r in read_csv(data / "roads.csv"):
         g.add_edge(r["u"], r["v"], weight=float(r["distance_km"]))
     donor_node = {r["donor_id"]: r["node_id"] for r in read_csv(data / "donors.csv")}
-    vehicle = {r["donor_id"]: r for r in read_csv(data / "vehicles.csv")}
+    vehicles = read_csv(data / "vehicles.csv")
+    fleet = (data / "depots.csv").exists()  # fleet mode: shared vehicles, fastest one bounds feasibility
+    fleet_speed = max(float(v["speed_kmph"]) for v in vehicles) if fleet else None
+    vehicle = {} if fleet else {r["donor_id"]: r for r in vehicles}
     ngos = read_csv(data / "ngos.csv")
     lots = read_csv(data / "packages.csv")
     demand = {(n["ngo_id"], c): int(n[f"demand_{c.lower()}_kg"]) for n in ngos for c in CATEGORIES}
@@ -73,12 +76,21 @@ def main(dataset):
     # 2. feasibility
     feasible = {}  # (lot, ngo) -> cost in paise per kg
     for lot in lots:
-        v = vehicle[lot["donor_id"]]
+        speed = fleet_speed if fleet else float(vehicle[lot["donor_id"]]["speed_kmph"])
+        ready = float(lot.get("ready_hours") or 0)
+        expiry = float(lot["expiry_hours"])
+        close = float(lot["pickup_close_hours"]) if lot.get("pickup_close_hours") not in (None, "", "-1") else expiry
         for n in ngos:
             if demand[(n["ngo_id"], lot["category"])] <= 0:
                 continue
             km = dist[lot["donor_id"]].get(n["node_id"])
-            if km is None or km / float(v["speed_kmph"]) + handling > float(lot["expiry_hours"]) + 1e-9:
+            if km is None:
+                continue
+            start = max(ready + handling / 2 + km / speed, float(n.get("open_hours") or 0))
+            if start + handling / 2 > expiry + 1e-9:
+                continue
+            ngo_close = n.get("close_hours")
+            if ready > close + 1e-9 or (ngo_close not in (None, "", "-1") and start > float(ngo_close) + 1e-9):
                 continue
             feasible[(lot["package_id"], n["ngo_id"])] = int(km * rate * 100 + 0.5)  # C_ij = D_ij * R
     cpp_feasible = {(b["package_id"], r["ngo_id"]): r["cost_paise_per_kg"]

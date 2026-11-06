@@ -1,0 +1,13 @@
+vehicle_id,depot_id,vehicle_type,capacity_kg,speed_kmph,cost_per_km_inr,fixed_cost_inr
+Depot1_2W1,Depot1,two_wheeler,50,20.0,1,250
+Depot1_2W2,Depot1,two_wheeler,50,20.0,1,250
+Depot1_4W1,Depot1,four_wheeler,100,20.0,1,500
+Depot1_4W2,Depot1,four_wheeler,100,20.0,1,500
+Depot2_2W1,Depot2,two_wheeler,50,20.0,1,250
+Depot2_2W2,Depot2,two_wheeler,50,20.0,1,250
+Depot2_4W1,Depot2,four_wheeler,100,20.0,1,500
+Depot2_4W2,Depot2,four_wheeler,100,20.0,1,500
+Depot3_2W1,Depot3,two_wheeler,50,20.0,1,250
+Depot3_2W2,Depot3,two_wheeler,50,20.0,1,250
+Depot3_4W1,Depot3,four_wheeler,100,20.0,1,500
+Depot3_4W2,Depot3,four_wheeler,100,20.0,1,500

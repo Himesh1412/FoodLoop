@@ -1,0 +1,16 @@
+ngo_id,name,type,node_id,demand_veg_kg,demand_non_veg_kg,demand_vegan_kg,open_hours,close_hours
+N1,Aadhar Orphanage,orphanage,J18,35,19,15,0.5,8.25
+N2,Disha Food Bank,food_bank,J22,44,0,19,0,4.75
+N3,Sparsh Orphanage,orphanage,J12,60,32,25,1.0,-1
+N4,Sahyog Orphanage,orphanage,J10,32,17,14,0,-1
+N5,Udaan Orphanage,orphanage,J21,26,0,11,0,-1
+N6,Prerana Old Age Home,old_age_home,J23,43,23,18,0,7.0
+N7,Ujjwal Old Age Home,old_age_home,J17,31,16,13,1.5,-1
+N8,Shanti Night Shelter,shelter,J28,0,0,11,0.75,-1
+N9,Udaan Old Age Home,old_age_home,J29,28,0,12,0,-1
+N10,Nanhe Kadam Community Kitchen,community_kitchen,J30,23,0,10,0,4.25
+N11,Sankalp Night Shelter,shelter,J24,30,16,12,1.75,9.25
+N12,Sneha Community Kitchen,community_kitchen,J9,0,0,14,0,-1
+N13,Disha Orphanage,orphanage,J8,34,18,14,0,4.0
+N14,Aashray Community Kitchen,community_kitchen,J25,0,0,22,0,-1
+N15,Asha Community Kitchen,community_kitchen,J16,33,18,14,0,-1

@@ -1,5 +1,6 @@
 #include "feasibility.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <map>
 #include <stdexcept>
@@ -24,7 +25,13 @@ std::vector<int> vehicleOfDonor(const Dataset& data) {
 }
 
 Feasibility computeFeasibility(const Dataset& data, const DistanceMatrix& m, const Params& params) {
-    const std::vector<int> vehicle = vehicleOfDonor(data);
+    std::vector<int> vehicle;
+    double fleetSpeed = 0;
+    if (data.fleetMode()) {
+        for (const Vehicle& v : data.vehicles) fleetSpeed = std::max(fleetSpeed, v.speed_kmph);
+    } else {
+        vehicle = vehicleOfDonor(data);
+    }
     std::map<std::string, int> donorIndex;
     for (size_t d = 0; d < data.donors.size(); ++d) donorIndex[data.donors[d].id] = static_cast<int>(d);
 
@@ -36,7 +43,8 @@ Feasibility computeFeasibility(const Dataset& data, const DistanceMatrix& m, con
         std::map<std::string, int>::const_iterator di = donorIndex.find(lot.donor_id);
         if (di == donorIndex.end()) throw std::runtime_error("lot " + lot.id + " belongs to unknown donor");
         const int d = di->second;
-        const Vehicle& v = data.vehicles[vehicle[d]];
+        const double speed = data.fleetMode() ? fleetSpeed : data.vehicles[vehicle[d]].speed_kmph;
+        const bool pickupOpen = lot.ready_hours <= lot.pickupClose() + 1e-9;
         if (lot.expiry_hours <= 0) ++f.expiredLots;  // the expiry rule below removes all its pairs
 
         for (size_t j = 0; j < data.ngos.size(); ++j) {
@@ -49,10 +57,19 @@ Feasibility computeFeasibility(const Dataset& data, const DistanceMatrix& m, con
                 ++f.removedUnreachable;
                 continue;
             }
-            const double hours = km / v.speed_kmph;
+            const double hours = km / speed;
+            // Handling is split evenly between pickup and delivery service.
+            const Ngo& ngo = data.ngos[j];
+            const double serviceStart =
+                std::max(lot.ready_hours + data.donors[d].pickupService(params.handling_hours) + hours, ngo.open_hours);
+            const double servedBy = serviceStart + ngo.deliveryService(params.handling_hours);
             // 1e-9 tolerance so an exact tie (e.g. 1.0 + 0.5 vs 1.5) is not lost to rounding.
-            if (hours + params.handling_hours > lot.expiry_hours + 1e-9) {
+            if (servedBy > lot.expiry_hours + 1e-9) {
                 ++f.removedExpiry;
+                continue;
+            }
+            if (!pickupOpen || (ngo.hasClose() && serviceStart > ngo.close_hours + 1e-9)) {
+                ++f.removedWindow;
                 continue;
             }
 

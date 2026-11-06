@@ -1,0 +1,10 @@
+vehicle_id,depot_id,vehicle_type,capacity_kg,speed_kmph,cost_per_km_inr
+V1,H1,van,120,30,15
+V2,H1,van,120,30,15
+V3,H1,van,120,30,15
+V4,H2,van,120,30,15
+V5,H2,auto_rickshaw,60,20,10
+V6,H2,scooter,25,25,6
+V7,H3,mini_truck,80,30,12
+V8,H3,auto_rickshaw,60,20,10
+V9,H3,scooter,25,25,6
