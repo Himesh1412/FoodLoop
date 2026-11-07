@@ -24,7 +24,9 @@ from engine import (CATEGORIES, DATA_DIR, ROOT, TABLES, TEXT_COLUMNS, EngineErro
 sys.path.insert(0, str(ROOT / "tools"))
 from generate_dataset import generate  # noqa: E402
 
-st.set_page_config(page_title="FoodLoop", page_icon="🍲", layout="wide")
+st.set_page_config(page_title="FoodLoop", page_icon="🍲", layout="wide", menu_items={})
+st.markdown("<style>#MainMenu, footer, [data-testid='stToolbar'] {visibility: hidden;}</style>",
+            unsafe_allow_html=True)
 
 DONOR_COLOR = "#2e7d32"
 NGO_COLOR = "#ef6c00"
@@ -73,8 +75,8 @@ if "editor_version" not in st.session_state:
     st.session_state.gen_count = 0
 
 source = st.sidebar.radio(
-    "Input data", ["Saved dataset", "Generate a new city", "Upload CSV files"],
-    help="Whatever you pick here can still be edited in the ✏️ Inputs tab.")
+    "Input data", ["Saved dataset", "Generate a new city"],
+    help="Whatever you pick here can still be changed in the ✏️ Inputs tab.")
 
 if source == "Saved dataset":
     dataset = st.sidebar.selectbox("Dataset", datasets, index=datasets.index("demo") if "demo" in datasets else 0)
@@ -95,30 +97,6 @@ elif source == "Generate a new city":
     source_key = ("generated", st.session_state.gen_count)
     load_source = lambda: st.session_state.generated  # noqa: E731
 
-else:
-    fill_from = st.sidebar.selectbox("Start from", datasets, index=datasets.index("demo") if "demo" in datasets else 0,
-                                     help="Tables you don't upload are taken from this dataset")
-    files = st.sidebar.file_uploader(
-        "CSV files", type="csv", accept_multiple_files=True,
-        help="Name each file after the table it replaces: " + ", ".join(f"{t}.csv" for t in TABLES)
-             + ". Columns must match the Inputs tab.")
-    uploads = {Path(f.name).stem.lower(): f for f in files or []}
-    unknown = sorted(set(uploads) - set(TABLES))
-    if unknown:
-        st.sidebar.warning("Ignored (unknown table name): " + ", ".join(f"{u}.csv" for u in unknown))
-    uploads = {k: v for k, v in uploads.items() if k in TABLES}
-    if uploads:
-        st.sidebar.success("Using your " + ", ".join(f"{k}.csv" for k in sorted(uploads)))
-    dataset = f"upload (rest from {fill_from})" if uploads else fill_from
-    source_key = ("upload", fill_from, tuple(sorted((k, f.name, f.size) for k, f in uploads.items())))
-
-    def load_source():
-        tables = load_dataset(fill_from)
-        for name, f in uploads.items():
-            f.seek(0)
-            tables[name] = pd.read_csv(f, dtype={c: str for c in TEXT_COLUMNS})
-        return tables
-
 reset = st.sidebar.button("Reset edits", help="Discard every edit and addition and reload the input data")
 if reset or st.session_state.get("source_key") != source_key:
     st.session_state.work = {k: v.copy() for k, v in load_source().items()}
@@ -126,46 +104,23 @@ if reset or st.session_state.get("source_key") != source_key:
     st.session_state.added = {"lots": set(), "ngos": set(), "donors": set()}  # entries added with the forms
     st.session_state.editor_version += 1
 
-defaults = load_params()
-with st.sidebar.expander("Parameters", expanded=False):
-    handling = st.number_input("Handling time (h)", 0.0, 5.0, float(defaults["handling_hours"]), 0.1)
-    b1, b2 = (float(x) for x in defaults["tier_boundaries_hours"].split(";"))
-    tier1 = st.number_input("Tier 1: expiry below (h)", 0.5, 100.0, b1, 0.5)
-    tier2 = st.number_input("Tier 2: expiry below (h)", 1.0, 200.0, b2, 1.0)
-    w1, w2, w3 = (int(x) for x in defaults["tier_weights"].split(";"))
-    weights = st.columns(3)
-    w1 = weights[0].number_input("Weight T1", 1, 10, w1)
-    w2 = weights[1].number_input("Weight T2", 1, 10, w2)
-    w3 = weights[2].number_input("Weight T3", 1, 10, w3)
-    crate = st.number_input("Crate size (kg)", 1, 100, int(defaults["crate_kg"]))
-    shift = st.number_input("Vehicle shift (h)", 0.5, 24.0, float(defaults["shift_hours"]), 0.5)
-    rate = st.number_input("R: allocation rate (₹ per kg·km)", 0.0, 50.0, float(defaults["rate_inr_per_kg_km"]), 0.1)
-    low_load = st.number_input("Low-load threshold (%)", 0.0, 100.0, float(defaults["low_load_pct"]), 5.0)
-
-params = {
-    "handling_hours": handling,
-    "tier_boundaries_hours": f"{tier1};{tier2}",
-    "crate_kg": crate,
-    "tier_weights": f"{w1};{w2};{w3}",
-    "shift_hours": shift,
-    "low_load_pct": low_load,
-    "rate_inr_per_kg_km": rate,
-}
+# Model parameters come from the dataset's own params.csv (e.g. the base paper's costs), else config/params.csv.
+params = load_params(dataset if source == "Saved dataset" else None)
 
 st.sidebar.markdown(
     "**Pipeline**  \n"
     "1. Dijkstra – road distances  \n"
-    "2. Feasibility – category + expiry  \n"
+    "2. Feasibility – category, expiry, time windows  \n"
     "3. Greedy – expiry ranking & tiers  \n"
     "4. Min Cost Max Flow – allocation  \n"
-    "5. 0/1 Knapsack – vehicle trips  \n"
+    "5. Knapsack trips, or multi-stop routes for a shared fleet  \n"
     "6. Greedy baseline – comparison")
 
 # ------------------------------------------------------------------ inputs tab (runs first: its edits feed the engine)
 
 base = st.session_state.work
-tabs = st.tabs(["📊 Overview", "✏️ Inputs", "⏳ Urgency", "📦 Allocation", "🗺️ Network", "🚚 Trips", "📏 Distances"])
-tab_overview, tab_inputs, tab_urgency, tab_alloc, tab_network, tab_trips, tab_dist = tabs
+tabs = st.tabs(["📊 Overview", "✏️ Inputs", "⏳ Urgency", "📦 Allocation", "🗺️ Network", "🚚 Trips"])
+tab_overview, tab_inputs, tab_urgency, tab_alloc, tab_network, tab_trips = tabs
 
 with tab_inputs:
     st.subheader("Inputs")
@@ -318,22 +273,6 @@ with tab_inputs:
         st.session_state.editor_version += 1
         st.rerun()
 
-    # ---- keep the current inputs as a dataset of their own
-    st.markdown("#### 💾 Save these inputs as a dataset")
-    s1, s2 = st.columns([3, 1])
-    save_name = s1.text_input("Dataset name", placeholder="e.g. my_scenario", label_visibility="collapsed")
-    if s2.button("Save", width="stretch"):
-        name = save_name.strip().lower()
-        if not re.fullmatch(r"[a-z0-9_\-]{1,40}", name):
-            st.error("Use 1–40 letters, digits, _ or - for the name.")
-        elif name in PROTECTED:
-            st.error(f"“{name}” is a built-in dataset; choose another name.")
-        else:
-            folder = DATA_DIR / name
-            folder.mkdir(parents=True, exist_ok=True)
-            for t, df in current.items():
-                (folder / f"{t}.csv").write_text(to_csv_text(df.dropna(how="all")), encoding="utf-8")
-            st.success(f"Saved to data/{name}. Pick it under **Saved dataset** in the sidebar any time.")
 
 tables = {"nodes": base["nodes"], "roads": base["roads"], "donors": donors, "vehicles": vehicles,
           "packages": packages, "ngos": ngos}
@@ -863,33 +802,3 @@ with tab_trips:
               st.dataframe(und, hide_index=True, width="stretch")
           else:
               st.success("None – every allocated crate arrives before expiry.")
-
-# ------------------------------------------------------------------ distances
-
-with tab_dist:
-    st.subheader("Dijkstra shortest road distances (km)")
-    dm = result["distance_matrix"]
-    matrix = pd.DataFrame(dm["km"], index=dm["donors"], columns=dm["ngos"])
-    routes = pd.DataFrame(result["routes"])
-    routes["path"] = routes["path"].apply(" → ".join)
-
-    def show_matrix(mx):
-        st.dataframe(mx.style.format("{:.1f}", na_rep="unreachable").background_gradient(cmap="Greens_r", axis=None),
-                     width="stretch")
-
-    if has_new:
-        new_heading()
-        rows_ = [d for d in matrix.index if d in focus_donors] or list(matrix.index)
-        cols_ = [n for n in matrix.columns if n in new_ngos] or list(matrix.columns)
-        if not focus_donors:  # only new NGOs: every donor's distance to them
-            rows_ = list(matrix.index)
-        st.caption("Rows: donors of your new food · columns: your new NGOs (all NGOs if you added none).")
-        show_matrix(matrix.loc[rows_, cols_])
-        mine = routes[routes["donor"].isin(focus_donors) & routes["ngo"].isin(cols_) if focus_donors
-                      else routes["ngo"].isin(new_ngos)]
-        st.dataframe(mine, hide_index=True, width="stretch")
-
-    with history("all donors and NGOs"):
-        show_matrix(matrix)
-        st.dataframe(routes, hide_index=True, width="stretch")
-    st.caption(f"{result['road_network']['junctions']} junctions, {result['road_network']['roads']} roads.")

@@ -5,14 +5,17 @@ parameters are written to a temporary folder as CSV files, bin/foodloop.exe is r
 --json, and its JSON output is returned as a dict. All algorithms stay in C++.
 """
 import json
+import os
 import subprocess
+import threading
 import tempfile
 from pathlib import Path
 
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
-ENGINE = ROOT / "bin" / "foodloop.exe"
+ENGINE = ROOT / "bin" / ("foodloop.exe" if os.name == "nt" else "foodloop")
+_BUILD_LOCK = threading.Lock()
 DATA_DIR = ROOT / "data"
 PARAMS_FILE = ROOT / "config" / "params.csv"
 
@@ -38,10 +41,26 @@ def load_dataset(name):
     return tables
 
 
-def load_params():
-    """Reads config/params.csv into {key: value as text}."""
-    df = pd.read_csv(PARAMS_FILE, dtype=str)
+def load_params(dataset=None):
+    """{key: value as text} from the dataset's own params.csv if it has one, else config/params.csv."""
+    path = DATA_DIR / dataset / "params.csv" if dataset else None
+    df = pd.read_csv(path if path is not None and path.exists() else PARAMS_FILE, dtype=str)
     return dict(zip(df["key"], df["value"]))
+
+
+def ensure_engine():
+    """Compiles the C++ engine with g++ the first time it is needed (e.g. on a fresh cloud server)."""
+    if ENGINE.exists():
+        return
+    with _BUILD_LOCK:
+        if ENGINE.exists():
+            return
+        ENGINE.parent.mkdir(exist_ok=True)
+        sources = sorted(str(p) for p in (ROOT / "cpp" / "src").glob("*.cpp"))
+        result = subprocess.run(["g++", "-std=c++14", "-O2", "-I", str(ROOT / "cpp" / "include"), *sources,
+                                 "-o", str(ENGINE)], capture_output=True, text=True)
+        if result.returncode != 0:
+            raise EngineError("could not build the C++ engine: " + result.stderr[-2000:])
 
 
 def to_csv_text(df):
@@ -61,8 +80,10 @@ def run_engine(csv_texts, params, repeat=5):
 
     Raises EngineError with the engine's message (for example a validation error) on failure.
     """
-    if not ENGINE.exists():
-        raise EngineError(f"{ENGINE} not found. Run build.bat in the project folder first.")
+    try:
+        ensure_engine()
+    except FileNotFoundError:
+        raise EngineError("the C++ engine is missing and g++ is not installed; run build.bat first")
 
     with tempfile.TemporaryDirectory() as tmp:
         folder = Path(tmp)
