@@ -69,7 +69,15 @@ st.sidebar.title("🍲 FoodLoop")
 st.sidebar.caption("Food redistribution with Min Cost Max Flow")
 
 PROTECTED = {"toy", "demo", "city", "large"}  # shipped datasets the app never overwrites
-datasets = list_datasets()
+# Datasets offered in the dashboard (the others are kept for tests and experiments).
+DATASET_LABELS = {
+    "demo": "Demo city – 4 donors, 5 NGOs",
+    "city": "Generated city – 12 donors, 15 NGOs",
+    "city_fleet": "Shared fleet – 3 depots, 9 vehicles",
+    "lucknow_base": "Lucknow, Robin Hood Army – real data",
+    "lucknow_s5": "Lucknow – few vehicles (scenario S-5)",
+}
+datasets = [d for d in DATASET_LABELS if d in list_datasets()]
 if "editor_version" not in st.session_state:
     st.session_state.editor_version = 0
     st.session_state.gen_count = 0
@@ -79,7 +87,7 @@ source = st.sidebar.radio(
     help="Whatever you pick here can still be changed in the ✏️ Inputs tab.")
 
 if source == "Saved dataset":
-    dataset = st.sidebar.selectbox("Dataset", datasets, index=datasets.index("demo") if "demo" in datasets else 0)
+    dataset = st.sidebar.selectbox("Dataset", datasets, index=0, format_func=lambda d: DATASET_LABELS.get(d, d))
     source_key = ("saved", dataset)
     load_source = lambda: load_dataset(dataset)  # noqa: E731
 
@@ -350,7 +358,7 @@ tier_of = {r["package_id"]: r["tier"] for r in result["priority_list"]}
 # ------------------------------------------------------------------ overview
 
 with tab_overview:
-    st.subheader(f"Results for “{dataset}”")
+    st.subheader(f"Results for “{DATASET_LABELS.get(dataset, dataset)}”")
     st.caption(f"{len(donors)} donors · {len(packages)} food lots · {len(ngos)} NGOs · "
                f"supply {m['supply_kg']} kg · demand {m['demand_kg']} kg")
 

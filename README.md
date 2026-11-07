@@ -26,6 +26,10 @@ scored with the base paper's objective (routing cost + hiring cost per vehicle +
 `tools/base_paper.py` rebuilds the 180 instances of the base paper (Dubey & Tanksale, 2023) from the public
 Cordeau et al. MDVRPTW set and runs FoodLoop and its ablations on them; results go to `results/base_paper.md`.
 
+## Live dashboard
+
+https://foodloop-xfweuhinxvewrhazeuogja.streamlit.app/
+
 ## Run it (Windows)
 
 Requirements: g++ (MinGW, C++14 or later) and Python 3.10+.
